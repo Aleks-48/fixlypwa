@@ -1,0 +1,189 @@
+import { notFound, redirect } from "next/navigation";
+import { getCurrentAuth } from "@/lib/auth/session";
+import { activeChairmanOsi } from "@/lib/auth/guards";
+import { getBuilding } from "@/lib/onboarding/service";
+import { listTariffs, buildingAccounts, monthlyIncome } from "@/lib/finance/service";
+import { Card, CardContent } from "@/components/ui/card";
+import { TariffForm, GenerateChargesForm, PaymentForm } from "../../../_components/FinanceForms";
+import { PageBody, PageHeader } from "../../../_components/PageHeader";
+import { BarChart } from "../../../_components/BarChart";
+
+export const dynamic = "force-dynamic";
+
+const CAT: Record<string, string> = {
+  MAINTENANCE: "Содержание",
+  TARGETED: "Целевой",
+  CAPITAL_REPAIR: "Кап. ремонт",
+};
+
+// «Финансы» дома (Фаза 2): тарифы → начисления → платежи → балансы по квартирам.
+export default async function FinancePage({ params }: { params: Promise<{ buildingId: string }> }) {
+  const auth = await getCurrentAuth();
+  if (!auth) redirect("/login");
+  const osiId = activeChairmanOsi(auth);
+  if (!osiId) redirect("/app");
+
+  const { buildingId } = await params;
+  const building = await getBuilding(osiId, buildingId);
+  if (!building) notFound();
+
+  const [tariffs, rows, income] = await Promise.all([
+    listTariffs(osiId, buildingId),
+    buildingAccounts(osiId, buildingId),
+    monthlyIncome(osiId, buildingId),
+  ]);
+  const accounts = rows
+    .filter((r) => r.accountId)
+    .map((r) => ({ accountId: r.accountId!, number: r.number }));
+
+  // Сводка по дому: суммы по всем бакетам всех квартир (макет: hero-баланс + начислено/оплачено).
+  const sum = { charged: 0, paid: 0, debt: 0 };
+  for (const r of rows) {
+    if (!r.balances) continue;
+    for (const b of Object.values(r.balances)) {
+      sum.charged += b.charged;
+      sum.paid += b.paid;
+      sum.debt += b.debt;
+    }
+  }
+  const debtors = rows.filter((r) => {
+    if (!r.balances) return false;
+    return Object.values(r.balances).some((b) => b.debt > 0);
+  });
+  const fmt = (n: number) => `₸ ${Math.round(n).toLocaleString("ru-RU")}`;
+  const hasIncome = income.some((m) => m.total > 0);
+
+  return (
+    <>
+      <PageHeader
+        title="Финансы дома"
+        subtitle={building.address}
+        back={{ href: `/app/buildings/${buildingId}`, label: building.address }}
+      />
+      <PageBody wide>
+      <section className="grid gap-6">
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr_1fr]">
+          <Card className="rounded-2xl border-none bg-primary text-primary-foreground shadow-sm">
+            <CardContent className="pt-6">
+              <p className="m-0 text-sm opacity-85">Поступило всего</p>
+              <p className="m-0 mt-1 text-3xl font-extrabold tracking-tight lg:text-4xl">
+                {fmt(sum.paid)}
+              </p>
+              <p className="m-0 mt-1.5 text-[13px] opacity-85">
+                {sum.charged > 0
+                  ? `${Math.round((sum.paid / sum.charged) * 100)}% от начисленного`
+                  : "начислений пока нет"}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl shadow-sm">
+            <CardContent className="pt-6">
+              <p className="m-0 text-sm text-muted-foreground">Начислено</p>
+              <p className="m-0 mt-1 text-2xl font-extrabold tracking-tight lg:text-3xl">
+                {fmt(sum.charged)}
+              </p>
+              <p className="m-0 mt-1.5 text-[13px] text-muted-foreground">{rows.length} квартир</p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl shadow-sm">
+            <CardContent className="pt-6">
+              <p className="m-0 text-sm text-muted-foreground">Долг</p>
+              <p
+                className={`m-0 mt-1 text-2xl font-extrabold tracking-tight lg:text-3xl ${
+                  sum.debt > 0 ? "text-destructive" : "text-success"
+                }`}
+              >
+                {fmt(sum.debt)}
+              </p>
+              <p className="m-0 mt-1.5 text-[13px] text-muted-foreground">
+                {debtors.length > 0 ? `${debtors.length} квартир с долгом` : "должников нет"}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {hasIncome && (
+          <Card className="rounded-2xl shadow-sm">
+            <CardContent className="pt-6">
+              <h2 className="m-0 mb-4 text-base font-bold">Поступления по месяцам</h2>
+              <BarChart
+                bars={income.map((m) => ({
+                  label: m.month.toLocaleDateString("ru-RU", { month: "short", timeZone: "UTC" }),
+                  value: m.total,
+                }))}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="grid gap-3">
+          <h2 className="m-0 text-base font-semibold">Тарифы</h2>
+          {tariffs.filter((t) => !t.periodTo).length > 0 && (
+            <ul className="m-0 grid list-none gap-1 p-0">
+              {tariffs
+                .filter((t) => !t.periodTo)
+                .map((t) => (
+                  <li key={t.id} className="text-sm" data-testid="tariff-row">
+                    {CAT[t.category]}: {String(t.rate)} {t.rateType === "PER_SQM" ? "₸/м²" : "₸ фикс."}
+                  </li>
+                ))}
+            </ul>
+          )}
+          <Card className="rounded-2xl shadow-sm">
+            <CardContent className="pt-6">
+              <TariffForm buildingId={buildingId} />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-3">
+          <h2 className="m-0 text-base font-semibold">Начисления</h2>
+          <Card className="rounded-2xl shadow-sm">
+            <CardContent className="pt-6">
+              <GenerateChargesForm buildingId={buildingId} />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-3">
+          <h2 className="m-0 text-base font-semibold">Платёж</h2>
+          <Card className="rounded-2xl shadow-sm">
+            <CardContent className="pt-6">
+              <PaymentForm accounts={accounts} />
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-3">
+          <h2 className="m-0 text-base font-semibold">Задолженность по квартирам</h2>
+          {rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Квартир нет.</p>
+          ) : (
+            <ul className="m-0 grid list-none gap-2 p-0">
+              {rows.map((r) => (
+                <li key={r.apartmentId} data-testid="balance-row">
+                  <Card className="rounded-2xl shadow-sm">
+                    <CardContent className="px-4 py-3">
+                      <div className="flex flex-wrap items-baseline justify-between gap-1">
+                        <strong className="text-sm font-semibold">Кв. {r.number}</strong>
+                        {r.balances ? (
+                          <span className="text-sm" data-testid="balance-debt">
+                            долг: содержание {r.balances.MAINTENANCE.debt} ₸ · целевые{" "}
+                            {r.balances.TARGETED.debt} ₸ · кап.рем {r.balances.CAPITAL_REPAIR.debt} ₸
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">нет начислений</span>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+      </PageBody>
+    </>
+  );
+}

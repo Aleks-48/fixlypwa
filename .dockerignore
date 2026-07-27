@@ -1,0 +1,11 @@
+# Подстраховка корня (основной .dockerignore — web/.dockerignore, используется при штатном
+# `cd web && docker compose up --build`). Этот файл защищает от случая, когда build context
+# по ошибке указан на корень репозитория (например, `docker build -f web/Dockerfile .` из
+# корня вместо web/) — тогда `COPY . .` в Dockerfile иначе утянул бы app/ (Flutter, включая
+# исторический app/supabase/ с мёртвым Gemini/YOLO-кодом) внутрь next-сборки.
+
+app/
+node_modules/
+.git/
+docs/
+*.pdf

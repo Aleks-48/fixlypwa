@@ -1,0 +1,9 @@
+{
+  "//": "Узкий tsconfig ТОЛЬКО для `next build` (используется через next.config.mjs → typescript.tsconfigPath). Проверяет типами лишь код приложения (src/**), а НЕ ops-скрипты (scripts/) и тесты (tests/, e2e/) — они запускаются своими раннерами (tsx/vitest/playwright) и не входят в продакшн-образ. Раньше жадный include в tsconfig.json затягивал scripts/seed-demo.ts в сборку приложения и ронял `docker compose build` на типах ops-скрипта. Полную проверку всего дерева по-прежнему делает `npm run typecheck` (широкий tsconfig.json).",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./tsconfig.build.tsbuildinfo"
+  },
+  "include": ["next-env.d.ts", "src", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", ".next", "spikes", "e2e", "scripts", "tests"]
+}

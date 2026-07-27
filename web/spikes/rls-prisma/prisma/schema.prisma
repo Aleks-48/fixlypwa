@@ -1,0 +1,51 @@
+// Спайк ADR-0006. Таблицы уже созданы db/init.sql — Prisma здесь только клиент
+// (миграции не гоняем). Модели маппятся на существующие таблицы.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Identity (вне RLS) ---
+model Osi {
+  id    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name  String
+  roles UserOsiRole[]
+  @@map("osi")
+}
+
+model User {
+  id    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone String        @unique
+  roles UserOsiRole[]
+  @@map("users")
+}
+
+model UserOsiRole {
+  userId String @map("user_id") @db.Uuid
+  osiId  String @map("osi_id")  @db.Uuid
+  role   String
+  user   User   @relation(fields: [userId], references: [id])
+  osi    Osi    @relation(fields: [osiId], references: [id])
+  @@id([userId, osiId])
+  @@map("user_osi_role")
+}
+
+// --- Tenant (под RLS) ---
+model Building {
+  id      String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId   String @map("osi_id") @db.Uuid
+  address String
+  @@map("building")
+}
+
+model Charge {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId      String  @map("osi_id")      @db.Uuid
+  buildingId String  @map("building_id") @db.Uuid
+  amount     Decimal @db.Decimal(12, 2)
+  @@map("charge")
+}

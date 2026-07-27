@@ -1,0 +1,49 @@
+name: fixly_app
+description: "A new Flutter project."
+publish_to: 'none'
+version: 2.0.0+5  # срез 26 — миграция на fixlypwa завершена, Supabase убран (REQ-134/135)
+
+environment:
+  sdk: '>=3.3.0 <4.0.0' # Поднял версию для совместимости с новыми пакетами
+
+# Срез 26 (ADR-0011/0012, build-plan-3-unification.md §9/12а): supabase_flutter и пакеты,
+# нужные только удалённым Supabase-экранам, убраны — критерий фазы 6 (REQ-134). Список ниже —
+# то, что реально используется достижимыми из HomeRouter файлами (проверено grep'ом по всему
+# app/lib после удаления).
+dependencies:
+  flutter:
+    sdk: flutter
+  shimmer: ^3.0.0
+  lucide_icons: ^0.257.0
+  intl: ^0.20.2
+  provider: ^6.1.5+1
+  shared_preferences: ^2.5.4
+  flutter_launcher_icons: ^0.13.1
+  http: ^1.6.0
+  flutter_dotenv: ^5.2.1
+  # Хранение Bearer-токена сессии (ADR-0012 §1, срез 21) — не в открытом виде.
+  flutter_secure_storage: ^10.3.1
+  # Push-уведомления (ADR-0012 §5, срез 20) — FCM, не Supabase.
+  firebase_core: ^4.4.0
+  firebase_messaging: ^16.1.1
+  url_launcher: ^6.3.2
+  signature: ^5.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  change_app_package_name: ^1.5.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo.png
+    - .env
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/logo.png"

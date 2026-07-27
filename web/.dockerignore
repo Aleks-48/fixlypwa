@@ -1,0 +1,19 @@
+node_modules
+.next
+.git
+.env
+.env.local
+npm-debug.log
+# Incremental-кэши tsc — не тащить в образ, чтобы `next build` делал чистую детерминированную
+# проверку типов (иначе устаревший кэш с хоста может маскировать/искажать результат).
+*.tsbuildinfo
+Dockerfile
+.dockerignore
+docker-compose.yml
+spikes
+docs
+e2e
+playwright-report
+test-results
+*.pdf
+README.md

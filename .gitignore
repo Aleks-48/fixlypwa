@@ -1,0 +1,60 @@
+# dependencies
+node_modules/
+
+# secrets
+.env
+.env.local
+.env*.local
+
+# next / build (сайт живёт в web/)
+.next/
+dist/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# prisma generated client
+/web/prisma/generated/
+
+# pwa generated assets (собираются из next-pwa при build)
+/web/public/sw.js
+/web/public/sw.js.map
+/web/public/workbox-*.js
+/web/public/workbox-*.js.map
+/web/public/worker-*.js
+/web/public/fallback-*.js
+
+# загруженные фото заявок (marketplace.md M3) — локальный volume в проде, не в git
+/web/public/uploads/*
+!/web/public/uploads/.gitkeep
+
+# test artifacts
+coverage/
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# logs / os
+*.log
+.DS_Store
+
+# local tool state
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.serena/
+.vscode/
+
+# дампы кода и тестовые файлы
+all_code_dump.txt
+code.txt
+repomix-output.xml
+/*.pdf
+
+# ngrok-туннель (ngrok.yml содержит authtoken — секрет; ngrok.exe — бинарник, не в git)
+ngrok.yml
+ngrok.exe
+
+# Flutter/Dart (приложение живёт в app/ — свой .gitignore внутри, это подстраховка корня)
+app/.dart_tool/
+app/build/

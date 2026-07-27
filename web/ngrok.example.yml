@@ -1,0 +1,18 @@
+# Шаблон конфигурации ngrok — сам ngrok.yml в .gitignore (содержит authtoken-секрет),
+# поэтому на каждой новой машине его нужно создать из этого шаблона заново.
+#
+# 1. Зарегистрируйтесь на https://ngrok.com (бесплатно).
+# 2. Возьмите свой authtoken: https://dashboard.ngrok.com/get-started/your-authtoken
+# 3. Скопируйте этот файл и впишите токен:
+#      Copy-Item ngrok.example.yml ngrok.yml
+#    затем замените ВАШ_ТОКЕН_БЕЗ_КАВЫЧЕК ниже на реальный.
+# 4. Скачайте сам ngrok.exe (https://ngrok.com/download) в эту же папку (web/) — тоже не в git.
+# 5. Запуск: .\start-fresh.ps1 (сам поднимет туннель "frontend") или вручную —
+#      .\ngrok.exe start frontend --config ngrok.yml
+
+version: "2"
+authtoken: ВАШ_ТОКЕН_БЕЗ_КАВЫЧЕК
+tunnels:
+  frontend:
+    proto: http
+    addr: 3000

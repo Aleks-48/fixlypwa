@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Гоняем на каждый PR (mvp-build-prompt §5.6): lint + typecheck + test; миграции применяются
+# на чистую БД через `prisma migrate deploy`; integration-тесты доказывают RLS-изоляцию.
+# Монорепо (2026-07-19): сайт живёт в web/ — все npm-шаги выполняются оттуда.
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fixlypwa
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - "5544:5432"
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # app_login (под RLS) — рантайм/тесты; postgres (superuser) — миграции.
+      DATABASE_URL: postgresql://app_login:app_pass@localhost:5544/fixlypwa?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5544/fixlypwa?schema=public
+      APP_DB_PASSWORD: app_pass
+      APP_SUPERADMIN_PASSWORD: superadmin_pass
+      SMS_PROVIDER: console
+      OTP_DEV_ECHO: "1" # эхо кода нужно e2e-тестам; в проде — 0
+      OTP_MAX_PER_IP_HOUR: "100000" # e2e-запросы идут с одного IP
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      # Быстрые проверки без БД.
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+      # Чистая БД → миграции → пароли ролей.
+      - run: npm run prisma:deploy
+      - run: npm run db:bootstrap
+
+      # RLS-изоляция и онбординг на реальной БД (DoD §5.3).
+      - run: npm run test:integration
+
+      - run: npm run build
+
+      # E2E ключевых флоу (DoD §5.4): вход по OTP.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+        env:
+          CI: "true"

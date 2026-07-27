@@ -1,0 +1,88 @@
+import { PrismaClient } from "@prisma/client";
+import { hashPassword } from "../src/lib/auth/password";
+
+// Демо-данные для локальной разработки/показа. Идемпотентно: повторный запуск не плодит дубли.
+// Сеет суперпользователем (DIRECT_URL) — обходит RLS, поэтому osiId проставляется явно.
+//
+// Демо-доступы:
+//   Председатель: demo@osi.kz / demo12345 (вход через /login?role=chairman)
+//   Житель:       +77010000001            (вход по OTP через /login; код печатается в лог сервера)
+
+const prisma = new PrismaClient({
+  datasourceUrl: process.env.DIRECT_URL ?? process.env.DATABASE_URL,
+});
+
+const CHAIR_EMAIL = "demo@osi.kz";
+const CHAIR_PHONE = "+77015550000";
+const RESIDENT_PHONE = "+77010000001";
+const OSI_NAME = "ОСИ Демо (Кокшетау)";
+
+async function main() {
+  const chair = await prisma.user.upsert({
+    where: { email: CHAIR_EMAIL },
+    update: { passwordHash: hashPassword("demo12345") },
+    create: {
+      email: CHAIR_EMAIL,
+      phone: CHAIR_PHONE,
+      passwordHash: hashPassword("demo12345"),
+    },
+  });
+
+  const existing = await prisma.osi.findFirst({ where: { name: OSI_NAME } });
+  if (existing) {
+    console.log(`seed: демо-ОСИ уже существует (${existing.id}) — пропускаю структуру`);
+    await prisma.$disconnect();
+    return;
+  }
+
+  const osi = await prisma.osi.create({
+    data: { name: OSI_NAME, bin: "080840000000", address: "г. Кокшетау, ул. Абая, 1" },
+  });
+  await prisma.userOsiRole.create({
+    data: { userId: chair.id, osiId: osi.id, role: "CHAIRMAN" },
+  });
+
+  const building = await prisma.building.create({
+    data: { osiId: osi.id, address: "ул. Абая, 1", apartmentsCount: 2, builtYear: 2015 },
+  });
+
+  const apt1 = await prisma.apartment.create({
+    data: { osiId: osi.id, buildingId: building.id, number: "1", area: "48.5" },
+  });
+  await prisma.apartment.create({
+    data: { osiId: osi.id, buildingId: building.id, number: "2", area: "62.0" },
+  });
+
+  const resident = await prisma.user.upsert({
+    where: { phone: RESIDENT_PHONE },
+    update: {},
+    create: { phone: RESIDENT_PHONE },
+  });
+  await prisma.userOsiRole.upsert({
+    where: { userId_osiId: { userId: resident.id, osiId: osi.id } },
+    update: {},
+    create: { userId: resident.id, osiId: osi.id, role: "RESIDENT" },
+  });
+  await prisma.occupant.upsert({
+    where: { userId: resident.id },
+    update: { apartmentId: apt1.id },
+    create: {
+      osiId: osi.id,
+      apartmentId: apt1.id,
+      userId: resident.id,
+      fullName: "Иван Жилец",
+      phone: RESIDENT_PHONE,
+    },
+  });
+
+  console.log(`seed: создана демо-ОСИ ${osi.id}`);
+  console.log(`  Председатель: ${CHAIR_EMAIL} / demo12345`);
+  console.log(`  Житель:       ${RESIDENT_PHONE} (вход по OTP)`);
+  await prisma.$disconnect();
+}
+
+main().catch(async (e) => {
+  console.error("seed failed:", e);
+  await prisma.$disconnect();
+  process.exit(1);
+});

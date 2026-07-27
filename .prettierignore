@@ -1,0 +1,10 @@
+node_modules
+.next
+public/sw.js
+public/workbox-*.js
+public/worker-*.js
+spikes
+prisma/migrations
+*.pdf
+pnpm-lock.yaml
+package-lock.json

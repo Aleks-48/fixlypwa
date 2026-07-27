@@ -1,0 +1,39 @@
+# Спайк ADR-0006: RLS + Prisma + PgBouncer (transaction pooling)
+# postgres — БД; pgbouncer — пул в режиме transaction (реальный прод-сценарий NFR-020).
+# Приложение (Prisma) ходит ТОЛЬКО через pgbouncer (localhost:6432), как и будет в проде.
+services:
+  postgres:
+    image: postgres:16
+    # md5 — чтобы pgbouncer (edoburu) без возни с SCRAM аутентифицировал app_login
+    command: ["postgres", "-c", "password_encryption=md5"]
+    environment:
+      POSTGRES_DB: spike
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"           # прямой доступ к БД (для отладки), приложение его не использует
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d spike"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: app_login
+      DB_PASSWORD: app_pass
+      DB_NAME: spike
+      AUTH_TYPE: md5
+      POOL_MODE: transaction   # ← проверяем именно этот режим (риск №3 ADR-0006)
+      MAX_CLIENT_CONN: "100"
+      DEFAULT_POOL_SIZE: "20"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "6432:5432"            # приложение подключается сюда

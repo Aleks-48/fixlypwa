@@ -1,0 +1,152 @@
+# Self-hosted стек одной командой (NFR-011): Postgres + PgBouncer + Next.js + Nginx(HTTPS).
+# Порядок запуска: postgres(healthy) → migrate(миграции+пароли ролей, one-shot) →
+# pgbouncer(app_login уже существует) → app → nginx.
+#
+# Значения секретов берутся из .env (см. .env.example). Реальные пароли — не в репозитории.
+
+# Явное имя проекта: compose по умолчанию берёт его из имени папки, а после переезда в web/
+# (монорепо 2026-07-19) это дало бы проект "web" и ОТВЯЗАЛО бы существующие тома с данными
+# (pgdata!) от контейнеров. Фиксируем историческое имя — тома и контейнеры остаются те же.
+name: fixlypwa
+
+services:
+  postgres:
+    image: postgres:16
+    # md5 — чтобы PgBouncer (edoburu) аутентифицировал app_login без возни со SCRAM
+    # (паттерн подтверждён спайком spikes/rls-prisma/).
+    command: ["postgres", "-c", "password_encryption=md5"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Прямой доступ к БД для локальной отладки/prisma studio (приложение ходит через pgbouncer).
+      # ТОЛЬКО loopback: на VPS нельзя публиковать Postgres в интернет (security-review 2026-07-02).
+      - "127.0.0.1:5544:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # One-shot: применяет миграции (init + rls_policies) и заменяет плейсхолдер-пароли ролей БД.
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      DIRECT_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      APP_SUPERADMIN_PASSWORD: ${APP_SUPERADMIN_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: app_login
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      DB_NAME: ${POSTGRES_DB}
+      AUTH_TYPE: md5
+      # transaction pooling — режим для горизонтального масштабирования (NFR-020, ADR-0006 риск №3).
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "100"
+      DEFAULT_POOL_SIZE: "20"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      # Тоже только loopback (см. postgres выше).
+      - "127.0.0.1:6432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U app_login -d ${POSTGRES_DB} || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      target: runner
+    environment:
+      NODE_ENV: production
+      # Рантайм — через PgBouncer как app_login (RLS действует). pgbouncer=true обязателен.
+      DATABASE_URL: postgresql://app_login:${APP_DB_PASSWORD}@pgbouncer:5432/${POSTGRES_DB}?pgbouncer=true&schema=public
+      # Прямое соединение (не используется приложением в рантайме, оставлено для симметрии/утилит).
+      DIRECT_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+      OTP_TTL_SECONDS: ${OTP_TTL_SECONDS:-300}
+      OTP_MAX_ATTEMPTS: ${OTP_MAX_ATTEMPTS:-5}
+      OTP_RESEND_COOLDOWN_SECONDS: ${OTP_RESEND_COOLDOWN_SECONDS:-60}
+      SMS_PROVIDER: ${SMS_PROVIDER:-console}
+      # Mobizon (Q-030, общая подпись — юрлицо/альфа-имя не нужны); пусто = SMS_PROVIDER=console
+      # не читает ключ вовсе.
+      MOBIZON_API_KEY: ${MOBIZON_API_KEY:-}
+      # Почтовый канал OTP (auth-email.md §6); пусто при EMAIL_PROVIDER=console — SMTP не трогается.
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      # Секьюрный дефолт 0: код не отдаётся в API-ответе. Для локального демо задай
+      # OTP_DEV_ECHO=1 в .env (или читай код из `docker compose logs app`).
+      OTP_DEV_ECHO: ${OTP_DEV_ECHO:-0}
+      # Web Push (опционально; пусто = push отключён, in-app центр работает).
+      WEB_PUSH_EMAIL: ${WEB_PUSH_EMAIL:-}
+      WEB_PUSH_PRIVATE_KEY: ${WEB_PUSH_PRIVATE_KEY:-}
+      NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY: ${NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY:-}
+      # FCM для мобильного клиента (ADR-0012 §5, опционально; пусто = канал отключён).
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:-}
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      # Фото заявок (marketplace.md M3) — локальный volume (data-residency РК, Q-054),
+      # переживает пересборку/передеплой образа. Требует --chown в Dockerfile (см. комментарий там).
+      - uploads:/app/public/uploads
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  nginx:
+    build:
+      context: ./docker/nginx
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Сертификаты в томе: локально генерится self-signed, в проде заменяется на Let's Encrypt.
+      - nginx_certs:/etc/nginx/certs
+
+volumes:
+  pgdata:
+  nginx_certs:
+  uploads:

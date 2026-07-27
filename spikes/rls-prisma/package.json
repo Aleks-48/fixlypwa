@@ -1,0 +1,19 @@
+{
+  "name": "rls-prisma-spike",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Спайк ADR-0006: RLS + Prisma + PgBouncer transaction pooling",
+  "scripts": {
+    "generate": "prisma generate",
+    "spike": "tsx src/spike.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

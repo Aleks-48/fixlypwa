@@ -1,0 +1,159 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================================================
+ * Дизайн-система (редизайн по макету Claude Design, docs/specs/ui-redesign.md): shadcn/ui
+ * поверх Tailwind v4 + Radix. Один уверенный акцент — синий #2E6BF0 (#5B93FF в тёмной теме),
+ * шрифт Golos Text, холодный светлый фон, карточки 16–18px, контролы 12–13px. Осознанно
+ * ДРУЖЕЛЮБНЕЕ и проще, чем у Управдома (competitors.md).
+ *
+ * Старые семантические алиасы (--bg/--fg/--brand/--card/--border/--muted/--radius/--danger)
+ * указывают на shadcn-переменные — старые inline-стили (var(--card) и т.п.) продолжают
+ * работать без переписывания каждого файла; новый код использует Tailwind-утилиты
+ * (bg-background, text-foreground, bg-primary, rounded-2xl…) напрямую.
+ *
+ * ⚠️ --accent и *-soft в тёмной теме — alpha-цвета (rgba): не использовать на них
+ * slash-модификаторы (bg-accent/50 даст двойную альфу).
+ * ============================================================================================ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Старые алиасы (обратная совместимость с inline-стилями сессий 1-10). */
+  --color-bg: var(--background);
+  --color-fg: var(--foreground);
+  --color-muted-fg: var(--muted-foreground);
+  --color-brand: var(--primary);
+  --color-brand-fg: var(--primary-foreground);
+  --color-line: var(--border);
+  --color-accent-soft: var(--accent);
+  --color-danger: var(--destructive);
+
+  /* Шкала радиусов по макету: карточки 16–18px (xl/2xl), контролы 12–13px (md). */
+  --radius-app: var(--radius);
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --radius-2xl: calc(var(--radius) + 2px);
+
+  --font-sans: var(--font-sans);
+}
+
+:root {
+  --radius: 1rem; /* крупные скругления — воздушнее, дружелюбнее казённых форм Управдома */
+
+  --background: #f4f6fa; /* холодный светлый фон страницы (--page макета) */
+  --foreground: #111827;
+  --card: #ffffff;
+  --card-foreground: #111827;
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+
+  --primary: #2e6bf0; /* синий бренд-акцент макета */
+  --primary-foreground: #ffffff;
+  --secondary: #eff2f8; /* --surface-2 макета: инпуты, подложки */
+  --secondary-foreground: #111827;
+
+  --muted: #eff2f8;
+  --muted-foreground: #6b7280;
+  --accent: #eaf1fe; /* --primary-soft: подложка активных/выбранных элементов */
+  --accent-foreground: #2e6bf0;
+
+  --destructive: #e5453a;
+  --destructive-foreground: #ffffff;
+  --success: #12b76a;
+  --success-foreground: #ffffff;
+  --warning: #c77700;
+  --warning-foreground: #ffffff;
+  --success-soft: #e6f7ef;
+  --warning-soft: #fbf0de;
+  --destructive-soft: #fbe9e7;
+
+  --border: #e5e9f0;
+  --input: #e5e9f0;
+  --ring: rgba(46, 107, 240, 0.5);
+}
+
+.dark {
+  --background: #0e1320; /* глубокий сине-чёрный (--page dark макета) */
+  --foreground: #e9eef7;
+  --card: #171f2f;
+  --card-foreground: #e9eef7;
+  --popover: #171f2f;
+  --popover-foreground: #e9eef7;
+
+  --primary: #5b93ff; /* ярче в тёмной теме */
+  --primary-foreground: #ffffff;
+  --secondary: #202a3c;
+  --secondary-foreground: #e9eef7;
+
+  --muted: #202a3c;
+  --muted-foreground: #93a0b5;
+  --accent: rgba(91, 147, 255, 0.16);
+  --accent-foreground: #5b93ff;
+
+  --destructive: #ff7a70;
+  --destructive-foreground: #0e1320;
+  --success: #3ddc97;
+  --success-foreground: #0e1320;
+  --warning: #fbbf5a;
+  --warning-foreground: #0e1320;
+  --success-soft: rgba(61, 220, 151, 0.15);
+  --warning-soft: rgba(251, 191, 90, 0.16);
+  --destructive-soft: rgba(255, 122, 112, 0.16);
+
+  --border: #273040;
+  --input: #273040;
+  --ring: rgba(91, 147, 255, 0.5);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Видимый фокус для клавиатурной навигации (WCAG 2.1 AA) — сверх Radix focus-ring. */
+:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}

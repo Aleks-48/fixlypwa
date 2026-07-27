@@ -1,0 +1,64 @@
+name: iOS Build
+
+on:
+  workflow_dispatch: 
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Generate Flutter iOS Config
+        run: |
+          # Это создаст папку ios/Flutter и файл generated_podhelpers.rb
+          # без запуска основной сборки и без вызова pod install
+          flutter build ios --config-only --no-codesign
+
+      - name: Patch iOS Version
+        run: |
+          # Устанавливаем 15.0 в проекте Xcode
+          find ios/Runner.xcodeproj/project.pbxproj -type f -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
+          
+          # Устанавливаем 15.0 в Podfile
+          python3 - << 'EOF'
+          import os, re
+          path = 'ios/Podfile'
+          if os.path.exists(path):
+              with open(path, 'r') as f: content = f.read()
+              content = re.sub(r'^#? ?platform :ios.*', "platform :ios, '15.0'", content, flags=re.MULTILINE)
+              with open(path, 'w') as f: f.write(content)
+          EOF
+
+      - name: Install Pods
+        run: |
+          cd ios
+          # Теперь файлы на месте, и pod install не упадет
+          pod install --repo-update
+          cd ..
+
+      - name: Build iOS Release
+        # Используем --no-pub, так как мы уже всё подготовили
+        run: flutter build ios --release --no-codesign --no-pub
+
+      - name: Create IPA
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -n 1)
+          cp -r "$APP_PATH" Payload/
+          zip -r app.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixly-iphone-app
+          path: app.ipa

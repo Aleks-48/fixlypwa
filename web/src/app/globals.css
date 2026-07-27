@@ -1,0 +1,197 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================================================
+ * Дизайн-система (docs/specs/ui-unification.md, 2026-07-17): shadcn/ui поверх Tailwind v4 +
+ * Radix. Палитра «шалфей и песок» — канон взят из основной темы приложения fixly
+ * (fixly/lib/theme/app_theme.dart, AppColors), а не изобретена заново: primary — зрелый шалфей
+ * #6B7A47 (контраст AA на белом, аудитория — пожилые председатели/жители ОСИ), светлая тема —
+ * тёплый песок #FAF6EE, тёмная — приглушённый шалфейно-серый #191C1A. Синяя палитра
+ * ui-redesign.md (#2E6BF0) — superseded; структура макета (сайдбар/таб-бар/Golos Text/радиусы)
+ * не менялась.
+ *
+ * Старые семантические алиасы (--bg/--fg/--brand/--card/--border/--muted/--radius/--danger)
+ * указывают на shadcn-переменные — старые inline-стили (var(--card) и т.п.) продолжают
+ * работать без переписывания каждого файла; новый код использует Tailwind-утилиты
+ * (bg-background, text-foreground, bg-primary, rounded-2xl…) напрямую.
+ *
+ * ⚠️ --accent и *-soft в тёмной теме — alpha-цвета (rgba): не использовать на них
+ * slash-модификаторы (bg-accent/50 даст двойную альфу).
+ * ============================================================================================ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Старые алиасы (обратная совместимость с inline-стилями сессий 1-10). */
+  --color-bg: var(--background);
+  --color-fg: var(--foreground);
+  --color-muted-fg: var(--muted-foreground);
+  --color-brand: var(--primary);
+  --color-brand-fg: var(--primary-foreground);
+  --color-line: var(--border);
+  --color-accent-soft: var(--accent);
+  --color-danger: var(--destructive);
+
+  /* Шкала радиусов по макету: карточки 16–18px (xl/2xl), контролы 12–13px (md). */
+  --radius-app: var(--radius);
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --radius-2xl: calc(var(--radius) + 2px);
+
+  --font-sans: var(--font-sans);
+}
+
+:root {
+  --radius: 1rem; /* крупные скругления — воздушнее, дружелюбнее казённых форм Управдома */
+
+  --background: #faf6ee; /* тёплый песок (AppColors.light.background) */
+  --foreground: #252c25; /* мягкий хвойно-чёрный, комфортнее чистого чёрного (textPrimary) */
+  --card: #ffffff;
+  --card-foreground: #252c25;
+  --popover: #ffffff;
+  --popover-foreground: #252c25;
+
+  --primary: #6b7a47; /* зрелый контрастный шалфей — ЧИТАЕМОСТЬ, не воздушный #8a9a5b (тот — только dark/крупные заливки) */
+  --primary-foreground: #ffffff;
+  --secondary: #f1eae0; /* surfaceVariant: инпуты, подложки */
+  --secondary-foreground: #252c25;
+
+  --muted: #f1eae0;
+  --muted-foreground: #838d84; /* textTertiary — та же роль, что hintStyle в приложении (placeholder:text-muted-foreground) */
+  --accent: #eef2e5; /* бледный шалфейный тон — подложка активных/выбранных элементов */
+  --accent-foreground: #6b7a47;
+
+  --destructive: #bc3939;
+  --destructive-foreground: #ffffff;
+  --success: #4f772d;
+  --success-foreground: #ffffff;
+  --warning: #e65f2b;
+  --warning-foreground: #ffffff;
+  --success-soft: #e8f3e0;
+  --warning-soft: #fbeadf;
+  --destructive-soft: #f7e6e6;
+
+  --border: #e3dac3; /* cardBorder: песочно-бежевая кайма */
+  --input: #e3dac3;
+  --ring: rgba(107, 122, 71, 0.5);
+}
+
+.dark {
+  --background: #191c1a; /* приглушённый шалфейно-серый (AppColors.dark.background) */
+  --foreground: #ffffff;
+  --card: #212622;
+  --card-foreground: #ffffff;
+  --popover: #212622;
+  --popover-foreground: #ffffff;
+
+  --primary: #8a9a5b; /* шалфей — на нём ВСЕГДА белый foreground (см. ниже), тот же выбор, что в приложении */
+  --primary-foreground: #ffffff;
+  --secondary: #282d29;
+  --secondary-foreground: #ffffff;
+
+  --muted: #282d29;
+  --muted-foreground: #9aa29d; /* textTertiary dark */
+  --accent: rgba(138, 154, 91, 0.16);
+  --accent-foreground: #8a9a5b;
+
+  /* Тёмная тема: как и в исходной палитре сайта, семантические цвета — яркие пастельные
+     заливки с ТЁМНЫМ текстом поверх (не белым) — так контрастнее на приглушённом фоне. */
+  --destructive: #e76f51;
+  --destructive-foreground: #191c1a;
+  --success: #52b788;
+  --success-foreground: #191c1a;
+  --warning: #f4a261;
+  --warning-foreground: #191c1a;
+  --success-soft: rgba(82, 183, 136, 0.15);
+  --warning-soft: rgba(244, 162, 97, 0.16);
+  --destructive-soft: rgba(231, 111, 81, 0.16);
+
+  --border: #323a34; /* cardBorder dark */
+  --input: #323a34;
+  --ring: rgba(138, 154, 91, 0.5);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Видимый фокус для клавиатурной навигации (WCAG 2.1 AA) — сверх Radix focus-ring. */
+:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+/* ==========================================================================
+   Печатная форма (Print Styles) — REQ-044
+   ========================================================================== */
+@media print {
+  /* 1. Скрываем всю системную навигацию приложения */
+  nav,
+  aside,
+  header,
+  footer,
+  [role="navigation"],
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* 2. Сбрасываем фоновые заливки и отступы внешних оберток Layout */
+  html,
+  body,
+  main {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* 3. Гарантируем, что печатный блок зафиксируется без обрезания */
+  page {
+    margin: 0;
+    box-shadow: none;
+  }
+}

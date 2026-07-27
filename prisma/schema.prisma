@@ -1,0 +1,927 @@
+// Единый источник модели данных проекта (CLAUDE.md).
+// Домен описан на языке предметной области в docs/specs/domain-model.md — этот файл его
+// техническая реализация. Мультитенантность — Postgres RLS по osiId (ADR-0006, паттерн
+// подтверждён спайком spikes/rls-prisma/). RLS-политики добавляются raw-SQL поверх миграции,
+// сгенерированной из этой схемы (см. prisma/migrations/.../migration.sql).
+//
+// Тир 1 (Фазы 1–2, features.md) — то, что в этой схеме. Тир 2 (легитимные голосования Meeting,
+// госверификация) — заготовки минимальны, реализация за ADR-0007 (партнёрство).
+
+generator client {
+  provider      = "prisma-client-js"
+  // native — для локальной разработки; debian — для Docker-образа (node:bookworm-slim).
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  // url и directUrl больше не указываются здесь в Prisma 7!
+}
+
+// =====================================================================================
+// IDENTITY — вне RLS (bootstrapping, ADR-0006 ревизия): сессия → пользователь → его Osi
+// отрабатывает ДО того, как известен osi_id, поэтому эти таблицы не могут быть под RLS.
+// =====================================================================================
+
+/// Объединение собственников имущества — единица тенанта (Q-005). Сама Osi тоже вне RLS:
+/// доступ к строкам Osi контролируется через UserOsiRole (пользователь видит только свои Osi
+/// на уровне приложения/API), а не через RLS-политику на osi_id (это же ключ тенанта).
+model Osi {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String
+  bin          String?   @unique @db.VarChar(12) // БИН — [TBD] точный формат
+  address      String?
+  registeredAt DateTime? @map("registered_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  roles     UserOsiRole[]
+  buildings Building[]
+
+  @@map("osi")
+}
+
+model User {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone        String   @unique
+  email        String?  @unique
+  passwordHash String?  @map("password_hash")
+  isSuperadmin Boolean  @default(false) @map("is_superadmin")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  sessions          Session[]
+  roles             UserOsiRole[]
+  occupant          Occupant?
+  pushSubscriptions PushSubscription[]
+  notifications     Notification[]
+  master            Master?
+  votes             Vote[] // <--- ДОБАВЬ ЭТУ СТРОКУ
+
+  @@map("users")
+}
+
+/// Web Push подписка устройства (срез 7, REQ-102). Identity-таблица — ВНЕ RLS: подписка
+/// принадлежит устройству пользователя, не ОСИ. Мёртвые подписки (404/410) удаляются
+/// приложением (REQ-103). Ключи p256dh/auth — параметры шифрования payload по стандарту Web Push.
+model PushSubscription {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscription")
+}
+
+/// Челлендж OTP-входа жителя (ADR-0005, REQ-091, NFR-054). Identity-таблица — ВНЕ RLS
+/// (нужна ДО того, как известен osi_id). Хранит хеш кода (не сам код), TTL и счётчик попыток;
+/// requestIp — для rate-limit по IP. Служит и rate-limit-журналом: свежие записи по phone/ip
+/// в окне ограничивают частоту запросов (SMS платные — защита от SMS-pumping).
+model OtpChallenge {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone      String
+  codeHash   String    @map("code_hash") // sha256(phone:code) — код в открытом виде не хранится
+  requestIp  String?   @map("request_ip")
+  attempts   Int       @default(0) // попытки ввода кода — при превышении челлендж сгорает
+  consumedAt DateTime? @map("consumed_at") // успешно использован — одноразовость
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([phone])
+  @@index([createdAt])
+  @@map("otp_challenge")
+}
+
+/// Самописные сессии по паттерну Lucia (ADR-0005, ревизия — пакет `lucia` не используется).
+/// id — hash токена (не хранить токен в открытом виде). activeOsiId — текущий рабочий
+/// контекст председателя (user-roles.md §3): какая Osi активна, определяет RLS-контекст
+/// запроса через forTenant(activeOsiId, ...).
+model Session {
+  id          String   @id // sha256-hash токена сессии
+  userId      String   @map("user_id") @db.Uuid
+  activeOsiId String?  @map("active_osi_id") @db.Uuid
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+enum Role {
+  SUPERADMIN
+  CHAIRMAN
+  RESIDENT
+  // ACCOUNTANT — вне MVP (Q-016 закрыт), зарезервировано в модели прав, не как отдельная роль здесь
+}
+
+/// User ↔ Osi многие-ко-многим (Q-011): председатель может состоять в нескольких Osi.
+model UserOsiRole {
+  userId String @map("user_id") @db.Uuid
+  osiId  String @map("osi_id") @db.Uuid
+  role   Role
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  osi  Osi  @relation(fields: [osiId], references: [id], onDelete: Cascade)
+
+  @@id([userId, osiId])
+  @@map("user_osi_role")
+}
+
+enum MasterStatus {
+  PENDING // анкета подана, ждёт ручного одобрения (Q-053, до появления админки)
+  APPROVED // видит витрину заказов своего города
+  REJECTED
+  BLOCKED
+}
+
+/// Мастер маркетплейса заявок (ADR-0009, docs/specs/marketplace.md) — identity-таблица,
+/// ВНЕ RLS: мастер не участник ни одной ОСИ, у него нет osiId/tenant-контекста. Доступ к
+/// витрине даёт ОТДЕЛЬНЫЙ контекст forMaster() (city), не forTenant(). Один User — максимум
+/// один Master (1:1): роль "мастер" не пересекается с ролями UserOsiRole.
+model Master {
+  id         String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String            @unique @map("user_id") @db.Uuid
+  fullName   String            @map("full_name")
+  city       String
+  categories RequestCategory[]
+  bio        String?
+  status     MasterStatus      @default(PENDING)
+  createdAt  DateTime          @default(now()) @map("created_at")
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offers MarketOffer[]
+
+  @@index([city, status])
+  @@map("master")
+}
+
+// =====================================================================================
+// TENANT — под RLS. Каждая модель несёт osiId (ADR-0006). Доступ только через forTenant().
+// =====================================================================================
+
+model Building {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId           String @map("osi_id") @db.Uuid
+  address         String
+  /// Структурированный город (ADR-0009: маркетплейс мастеров матчит по городу, не по
+  /// свободному адресу). Дефолт — бэкфилл существующих домов, менять по мере роста за Кокшетау.
+  city            String @default("Кокшетау")
+  apartmentsCount Int?   @map("apartments_count")
+  builtYear       Int?   @map("built_year") // [TBD]
+
+  // Osi вне RLS (identity) — эта связь не участвует в forTenant()-паттерне, только для чтения
+  // связанных данных приложением (напр. отображение названия ОСИ рядом с домом).
+  osi           Osi            @relation(fields: [osiId], references: [id])
+  apartments    Apartment[]
+  tariffs       Tariff[]
+  reports       Report[]
+  subscription  Subscription?
+  bankAccounts  BankAccount[]
+  expenses      Expense[]
+  announcements Announcement[]
+  requests      Request[]
+  infoItems     InfoItem[]
+  polls         Poll[]
+  meetings      Meeting[]
+
+  @@index([osiId])
+  @@map("building")
+}
+
+/// Единица собственности в доме (REQ-011).
+model Apartment {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId      String   @map("osi_id") @db.Uuid
+  buildingId String   @map("building_id") @db.Uuid
+  number     String
+  area       Decimal? @db.Decimal(8, 2) // м²
+
+  building  Building   @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  account   Account?
+  owners    Owner[]
+  occupants Occupant[]
+  requests  Request[]
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@map("apartment")
+}
+
+/// Лицевой счёт — учётная единица начислений (Q-006: 1 квартира = 1 Account).
+model Account {
+  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId         String  @map("osi_id") @db.Uuid
+  apartmentId   String  @unique @map("apartment_id") @db.Uuid
+  accountNumber String? @map("account_number")
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  charges   Charge[]
+  payments  Payment[]
+
+  @@index([osiId])
+  @@map("account")
+}
+
+/// Собственник — юридическое владение (Q-007), может отличаться от Occupant.
+/// userId опционален: не у каждого Owner обязательно есть логин.
+model Owner {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId          String   @map("osi_id") @db.Uuid
+  apartmentId    String   @map("apartment_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  fullName       String   @map("full_name")
+  phone          String?
+  iin            String? // ПДн — NFR-051, хранить только на инфраструктуре в РК
+  ownershipShare Decimal? @map("ownership_share") @db.Decimal(5, 4) // доля владения, [TBD]
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@index([apartmentId])
+  @@map("owner")
+}
+
+/// Проживающий — фактический пользователь кабинета (Q-007). userId обязателен (это и есть
+/// основной пользователь кабинета жителя, REQ-052). Может не совпадать с Owner —
+/// видит данные Account/Apartment целиком (Q-033 закрыт, domain-model.md).
+model Occupant {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId       String @map("osi_id") @db.Uuid
+  apartmentId String @map("apartment_id") @db.Uuid
+  userId      String @unique @map("user_id") @db.Uuid
+  fullName    String @map("full_name")
+  phone       String
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@index([apartmentId])
+  @@map("occupant")
+}
+
+/// Статья тарифа — минимум 3 (Q-008): эксплуатация, целевой сбор, кап.ремонт.
+/// Совпадает с бакетами задолженности (REQ-024, Q-032) и группировкой IncomeCategory ниже.
+enum TariffCategory {
+  MAINTENANCE // эксплуатационные расходы / управление объектом кондоминиума
+  TARGETED // целевой сбор
+  CAPITAL_REPAIR // накопления на капитальный ремонт (обособленный фонд)
+}
+
+enum RateType {
+  PER_SQM
+  FIXED
+}
+
+model Tariff {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId      String         @map("osi_id") @db.Uuid
+  buildingId String         @map("building_id") @db.Uuid
+  category   TariffCategory
+  rateType   RateType       @map("rate_type")
+  rate       Decimal        @db.Decimal(12, 2)
+  periodFrom DateTime       @map("period_from")
+  periodTo   DateTime?      @map("period_to")
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  charges  Charge[]
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@map("tariff")
+}
+
+/// Статус ОПЛАТЫ начисления — 3 значения (REQ-023, пересмотрено при ревизии).
+/// "Просрочено" НЕ хранится: это computed-признак (dueDate в прошлом И status != PAID),
+/// вычисляется в запросе/приложении, а не в БД — статус оплаты и просрочка ортогональны.
+enum ChargeStatus {
+  OPEN
+  PARTIALLY_PAID
+  PAID
+}
+
+model Charge {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId     String       @map("osi_id") @db.Uuid
+  accountId String       @map("account_id") @db.Uuid
+  tariffId  String       @map("tariff_id") @db.Uuid
+  period    DateTime // месяц начисления
+  amount    Decimal      @db.Decimal(12, 2)
+  dueDate   DateTime     @map("due_date")
+  status    ChargeStatus @default(OPEN)
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tariff  Tariff  @relation(fields: [tariffId], references: [id])
+
+  @@index([osiId])
+  @@index([accountId])
+  @@map("charge")
+}
+
+/// Категория поступления — строки 6.1–6.7 формы отчёта (report-spec.md §2). Более гранулярна,
+/// чем TariffCategory: различает квартиры/нежилые vs парковки/кладовки, аренду, целевые, иное.
+/// Бакет задолженности (TariffCategory) выводится из IncomeCategory при агрегации
+/// (RESIDENT_DUES/PARKING_DUES → MAINTENANCE; CAPITAL_REPAIR_CONTRIBUTION → CAPITAL_REPAIR;
+/// TARGETED_* → TARGETED; RENTAL/OTHER — вне бакетов долга).
+enum IncomeCategory {
+  RESIDENT_DUES // 6.1 текущие взносы квартир/нежилых на управление
+  PARKING_STORAGE_DUES // 6.2 взносы за парковки/кладовки
+  CAPITAL_REPAIR_CONTRIBUTION // 6.3 накопительные взносы на кап.ремонт
+  RENTAL_INCOME // 6.4 плата за аренду общего имущества
+  TARGETED_RESIDENT // 6.5 целевые взносы квартир/нежилых
+  TARGETED_PARKING // 6.6 целевые взносы парковок/кладовок
+  OTHER_INCOME // 6.7 иные поступления
+}
+
+/// Факт оплаты (поступление). Статья — ОБЯЗАТЕЛЬНОЕ поле, председатель указывает вручную
+/// при вводе (Q-032 закрыт): один реальный платёж на несколько статей = несколько строк Payment.
+/// Никакой авто-аллокации в MVP.
+model Payment {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId          String         @map("osi_id") @db.Uuid
+  accountId      String         @map("account_id") @db.Uuid
+  amount         Decimal        @db.Decimal(12, 2)
+  paidAt         DateTime       @map("paid_at")
+  method         String? // ручной ввод / импорт (Q-012) / демо-оплата онлайн (payments-online.md)
+  /// Метка симулятора эквайринга (payments-online.md, ADR-0010) — только для онлайн-демо-оплат,
+  /// null для ручного ввода председателем. Информационная, НЕ используется для идемпотентности
+  /// (та обеспечивается пересчётом долга на сервере при каждом вызове).
+  gatewayRef     String?        @map("gateway_ref")
+  incomeCategory IncomeCategory @map("income_category")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@index([accountId])
+  @@map("payment")
+}
+
+// ---- Банковские счета и расходы (report-spec.md, bank-import.md) — REQ-025/026 ----
+
+enum BankAccountType {
+  CURRENT // текущий — управление/содержание
+  SAVINGS // сберегательный — накопления на кап.ремонт (расходование только по решению собрания)
+}
+
+model BankAccount {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId          String          @map("osi_id") @db.Uuid
+  buildingId     String          @map("building_id") @db.Uuid
+  type           BankAccountType
+  bankName       String          @map("bank_name")
+  accountNumber  String          @map("account_number") // IBAN
+  currentBalance Decimal?        @map("current_balance") @db.Decimal(14, 2)
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  building   Building        @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  expenses   Expense[]
+  statements BankStatement[]
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@map("bank_account")
+}
+
+/// Импортированная выписка (Kaspi Pay и т.п., bank-import.md) — источник остатков (блок 1–2
+/// отчёта) и сверки итогов (правило 3 в bank-import.md: "Всего списано" = Σ Expense до тиына).
+model BankStatement {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId          String    @map("osi_id") @db.Uuid
+  bankAccountId  String    @map("bank_account_id") @db.Uuid
+  periodFrom     DateTime  @map("period_from")
+  periodTo       DateTime  @map("period_to")
+  openingBalance Decimal   @map("opening_balance") @db.Decimal(14, 2)
+  closingBalance Decimal   @map("closing_balance") @db.Decimal(14, 2)
+  totalIncome    Decimal   @map("total_income") @db.Decimal(14, 2)
+  totalExpense   Decimal   @map("total_expense") @db.Decimal(14, 2)
+  sourceFileUrl  String?   @map("source_file_url") // оригинал PDF — первичный документ
+  reconciledAt   DateTime? @map("reconciled_at")
+
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@index([bankAccountId])
+  @@map("bank_statement")
+}
+
+/// Категория расхода — строки 7.1.1–7.6 формы отчёта (report-spec.md §2, Приложение 3 № 163).
+enum ExpenseCategory {
+  LABOR_ACCOUNTING // 7.1.1 оплата труда — бухучёт/отчётность
+  LABOR_MANAGEMENT // 7.1.2 оплата труда — управление объектом
+  BUDGET_PAYMENTS // 7.1.3 обязательные платежи в бюджет
+  BANK_SERVICES // 7.1.4 банковские услуги
+  CASH_SERVICE // 7.1.5 расчётно-кассовое обслуживание
+  OFFICE // 7.1.6 содержание офиса
+  SERVICE_CONTRACT // 7.2.1 услуги субъектам сервисной деятельности (см. counterparty)
+  CURRENT_REPAIR // 7.3 текущий ремонт общего имущества
+  UTILITIES // 7.4 коммунальные услуги на содержание общего имущества
+  HOUSEHOLD // 7.5 хозяйственные расходы
+  CAPITAL_REPAIR // 7.6 капитальный ремонт (только со сберегательного счёта, по решению собрания)
+}
+
+model Counterparty {
+  id    String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId String  @map("osi_id") @db.Uuid
+  name  String
+  bin   String? // БИН/ИИН контрагента
+  type  String? // ИП/ТОО/НАО/физлицо
+
+  expenses Expense[]
+
+  @@index([osiId])
+  @@map("counterparty")
+}
+
+/// Расход ОСИ (блок 7 отчёта). withheldTax/contractRef — для выплат физлицам по ДГП
+/// (bank-import.md правило 2: сумма + удержанный ИПН 10%, ссылка на договор ГПХ).
+model Expense {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId              String          @map("osi_id") @db.Uuid
+  buildingId         String          @map("building_id") @db.Uuid
+  bankAccountId      String          @map("bank_account_id") @db.Uuid
+  expenseCategory    ExpenseCategory @map("expense_category")
+  date               DateTime
+  amount             Decimal         @db.Decimal(14, 2)
+  counterpartyId     String?         @map("counterparty_id") @db.Uuid
+  purpose            String?
+  withheldTax        Decimal?        @map("withheld_tax") @db.Decimal(14, 2)
+  contractRef        String?         @map("contract_ref") // ДГП/договор/акт
+  isInternalTransfer Boolean         @default(false) @map("is_internal_transfer") // перевод между своими счетами — не доход/расход
+  actUrl             String?         @map("act_url") // подтверждающий акт (7.2.1)
+
+  building     Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  bankAccount  BankAccount   @relation(fields: [bankAccountId], references: [id])
+  counterparty Counterparty? @relation(fields: [counterpartyId], references: [id])
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@index([bankAccountId])
+  @@map("expense")
+}
+
+// ---- Отчёты и подписка ----
+
+enum ReportType {
+  MONTHLY
+  QUARTERLY // REQ-045: отчёт за квартал (report-spec.md §4а)
+  ANNUAL
+}
+
+enum ReportStatus {
+  DRAFT
+  GENERATED
+  PUBLISHED
+}
+
+/// Публичное представление (жителям) исключает ПДн — report-spec.md §2а: ИИН, телефоны,
+/// реквизиты, ФИО рядового персонала скрыты (заменяются агрегатом «ФОТ персонала»).
+/// Разделение internal/public реализуется на уровне сериализации при отдаче отчёта, не схемой.
+model Report {
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId            String       @map("osi_id") @db.Uuid
+  buildingId       String       @map("building_id") @db.Uuid
+  type             ReportType   @default(MONTHLY)
+  periodFrom       DateTime     @map("period_from")
+  periodTo         DateTime     @map("period_to")
+  status           ReportStatus @default(DRAFT)
+  generatedAt      DateTime?    @map("generated_at")
+  publishedAt      DateTime?    @map("published_at")
+  accountantName   String?      @map("accountant_name")
+  chairmanName     String?      @map("chairman_name")
+  houseCouncilName String?      @map("house_council_name")
+  fileUrl          String?      @map("file_url") // Q-013 остаток: формат вывода PDF/веб
+  /// Снимок цифр отчёта на момент генерации (4 блока формы) — опубликованный отчёт не «плывёт»
+  /// при последующих правках данных (Фаза 2, REQ-040/041).
+  data             Json?
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@map("report")
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+/// Единица подписки — Building, не Osi целиком (Q-009 закрыт).
+model Subscription {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId       String             @map("osi_id") @db.Uuid
+  buildingId  String             @unique @map("building_id") @db.Uuid
+  plan        String?
+  status      SubscriptionStatus @default(TRIAL)
+  periodStart DateTime           @map("period_start")
+  periodEnd   DateTime?          @map("period_end")
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@map("subscription")
+}
+
+// ---- Аудит (NFR-055) ----
+
+enum AuditEntityType {
+  CHARGE
+  PAYMENT
+  TARIFF
+  EXPENSE
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+/// Append-only журнал финансовых мутаций — снимает споры «куда ушли деньги» (vision.md §3).
+/// Приложение никогда не делает UPDATE/DELETE над этой таблицей.
+model AuditLog {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId       String          @map("osi_id") @db.Uuid
+  entityType  AuditEntityType @map("entity_type")
+  entityId    String          @map("entity_id") @db.Uuid
+  action      AuditAction
+  diff        Json?
+  actorUserId String          @map("actor_user_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([osiId])
+  @@index([entityType, entityId])
+  @@map("audit_log")
+}
+
+/// Журнал действий админки платформы (ADR-0008, REQ-110) — identity-таблица ВНЕ RLS
+/// (действия суперадмина платформенные: у смены статуса мастера osiId нет в принципе).
+/// Append-only: приложение никогда не делает UPDATE/DELETE. НЕ смешивать с финансовым
+/// AuditLog ОСИ (тот — тенантный журнал споров о деньгах). Секреты (пароли) в diff не пишутся.
+model AdminAuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId String   @map("actor_user_id") @db.Uuid
+  /// Код действия: MASTER_STATUS | SUBSCRIPTION_SET | CHAIRMAN_GRANT | PASSWORD_RESET | …
+  action      String
+  /// Идентификатор затронутой сущности (uuid мастера/дома/пользователя — тип зависит от action).
+  entityId    String   @map("entity_id")
+  diff        Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([actorUserId])
+  @@index([action, entityId])
+  @@map("admin_audit_log")
+}
+
+// =====================================================================================
+// КОММУНИКАЦИЯ — Фаза 1, features.md блок B. Снижает нагрузку председателя/головную боль
+// жителей; НЕ заменяет WhatsApp (vision.md §1 ревизия).
+// =====================================================================================
+
+enum AnnouncementScope {
+  BUILDING
+  ENTRANCE
+  APARTMENT
+}
+
+model Announcement {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId        String            @map("osi_id") @db.Uuid
+  buildingId   String            @map("building_id") @db.Uuid
+  authorUserId String            @map("author_user_id") @db.Uuid
+  title        String
+  body         String
+  scope        AnnouncementScope @default(BUILDING)
+  targetIds    String[]          @map("target_ids") // id подъездов/квартир при scope != BUILDING
+  isPinned     Boolean           @default(false) @map("is_pinned")
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  building Building           @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  reads    AnnouncementRead[]
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@map("announcement")
+}
+
+model AnnouncementRead {
+  osiId          String   @map("osi_id") @db.Uuid // денормализовано с Announcement — ADR-0006: каждая tenant-таблица несёт osiId для RLS
+  announcementId String   @map("announcement_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  readAt         DateTime @default(now()) @map("read_at")
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, userId])
+  @@index([osiId])
+  @@map("announcement_read")
+}
+
+enum RequestCategory {
+  PLUMBING
+  ELEVATOR
+  CLEANING
+  ELECTRICITY
+  OTHER
+}
+
+enum RequestStatus {
+  RECEIVED
+  IN_PROGRESS
+  RESOLVED
+}
+
+/// Заявка жителя — снижает нагрузку председателя (features.md принцип 3), официальный след
+/// вместо потерянного сообщения в WhatsApp.
+model Request {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId        String          @map("osi_id") @db.Uuid
+  buildingId   String          @map("building_id") @db.Uuid
+  apartmentId  String?         @map("apartment_id") @db.Uuid
+  authorUserId String          @map("author_user_id") @db.Uuid
+  category     RequestCategory
+  text         String
+  photoUrls    String[]        @map("photo_urls")
+  status       RequestStatus   @default(RECEIVED)
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  building      Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  apartment     Apartment?       @relation(fields: [apartmentId], references: [id])
+  messages      RequestMessage[]
+  marketListing MarketListing?
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@index([status])
+  @@map("request")
+}
+
+model RequestMessage {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId        String   @map("osi_id") @db.Uuid // денормализовано с Request — ADR-0006: каждая tenant-таблица несёт osiId для RLS
+  requestId    String   @map("request_id") @db.Uuid
+  authorUserId String   @map("author_user_id") @db.Uuid
+  text         String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  request Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@index([requestId])
+  @@map("request_message")
+}
+
+// ---- Маркетплейс заявок — мастера (ADR-0009, docs/specs/marketplace.md) ----
+// MarketListing/MarketOffer — tenant-таблицы (несут osiId), НО с ДВУМЯ RLS-политиками
+// (permissive, объединяются через OR): tenant_iso — путь председателя через forTenant();
+// market_read/master_own — путь мастера через forMaster() (см. RLS-миграцию). Обычный
+// generic-цикл RLS-политик (prisma/migrations/.../rls_policies) на них НЕ применяется —
+// политики этих двух таблиц описаны отдельно.
+
+enum MarketListingStatus {
+  PUBLISHED // видна проверенным (APPROVED) мастерам своего города
+  TAKEN // отклик принят, снята с общей витрины
+  CLOSED // председатель снял публикацию / заявка закрыта
+}
+
+/// Витрина-проекция заявки для мастеров (ADR-0009, вариант C: НЕ JOIN к Request, а явная
+/// копия whitelist-полей). НИКОГДА не копировать: квартиру, ФИО/телефон жителя, тред заявки —
+/// это гарантия приватности до принятия отклика (marketplace.md §4).
+model MarketListing {
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId         String              @map("osi_id") @db.Uuid
+  requestId     String              @unique @map("request_id") @db.Uuid
+  city          String
+  category      RequestCategory
+  title         String
+  description   String
+  photoUrls     String[]            @map("photo_urls")
+  buildingLabel String              @map("building_label") // адрес дома БЕЗ номера квартиры
+  status        MarketListingStatus @default(PUBLISHED)
+  publishedAt   DateTime            @default(now()) @map("published_at")
+  closedAt      DateTime?           @map("closed_at")
+
+  request Request       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  offers  MarketOffer[]
+
+  @@index([osiId])
+  @@index([city, status])
+  @@map("market_listing")
+}
+
+enum MarketOfferStatus {
+  OFFERED
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+}
+
+/// Отклик мастера на листинг. osiId денормализован с MarketListing — как и везде в схеме,
+/// каждая tenant-таблица несёт свой osiId для RLS (ADR-0006), даже если он выводим через JOIN.
+model MarketOffer {
+  id        String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId     String            @map("osi_id") @db.Uuid
+  listingId String            @map("listing_id") @db.Uuid
+  masterId  String            @map("master_id") @db.Uuid
+  message   String
+  price     Decimal?          @db.Decimal(12, 2)
+  status    MarketOfferStatus @default(OFFERED)
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  listing MarketListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  master  Master        @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, masterId]) // один мастер — один активный отклик на листинг
+  @@index([osiId])
+  @@index([listingId])
+  @@index([masterId])
+  @@map("market_offer")
+}
+
+enum InfoItemType {
+  TRASH_SCHEDULE
+  EMERGENCY_CONTACTS
+  PAYMENT_DETAILS
+  CHAIRMAN_CONTACTS
+  OTHER
+}
+
+model InfoItem {
+  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId      String       @map("osi_id") @db.Uuid
+  buildingId String       @map("building_id") @db.Uuid
+  type       InfoItemType
+  title      String
+  content    String
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@map("info_item")
+}
+
+enum NotificationType {
+  ANNOUNCEMENT
+  REQUEST_CREATED
+  REQUEST_STATUS
+  REQUEST_MESSAGE
+}
+
+/// In-app уведомление (срез 7, REQ-100/101). Tenant-таблица — ПОД RLS (несёт osiId).
+/// userId — получатель. entityType/entityId — deep link на источник (объявление/заявку).
+/// Web Push доставляет только тип+id (REQ-105), а этот текст показывается в приложении.
+model Notification {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId      String           @map("osi_id") @db.Uuid
+  userId     String           @map("user_id") @db.Uuid
+  type       NotificationType
+  title      String
+  body       String
+  entityType String?          @map("entity_type") // 'announcement' | 'request'
+  entityId   String?          @map("entity_id") @db.Uuid
+  readAt     DateTime?        @map("read_at")
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@index([userId, readAt])
+  @@map("notification")
+}
+
+enum MeetingStatus {
+  DRAFT
+  IN_PROGRESS
+  CLOSED
+}
+
+/// Легитимное собрание (Приложение 1 к приказу № 163) — Тир 2, за барьером аккредитации.
+/// Заготовка схемы; реализация flow (кворум, идентификация, ЭЦП-протокол) — Фаза 3, ADR-0007.
+model Meeting {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId             String        @map("osi_id") @db.Uuid
+  buildingId        String        @map("building_id") @db.Uuid
+  agenda            String
+  quorumRequirement String?       @map("quorum_requirement") // >50% участников либо от общего числа — п.11/12 приказа №163
+  status            MeetingStatus @default(DRAFT)
+  protocolUrl       String?       @map("protocol_url")
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@map("meeting")
+}
+
+model TelegramLink {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone     String   @unique
+  chatId    String   @map("chat_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("telegram_link")
+}
+
+// =====================================================================================
+// ГОЛОСОВАНИЯ И ОПРОСЫ (Юридически значимые и информационные)
+// =====================================================================================
+
+enum PollType {
+  INFORMATIONAL // Обычный опрос жильцов
+  LEGALLY_BINDING // Юридически значимое голосование (Закон РК «О жилищных отношениях»)
+}
+
+enum QuorumType {
+  BY_AREA // Кворум считается по совокупной площади (кв. м)
+  BY_APARTMENT // Кворум считается по количеству квартир
+}
+
+enum AuthMethod {
+  AITU_PASSPORT // Авторизация через Digital ID / Aitu
+  EDS_NCALAYER // Подпись ЭЦП
+  SMS_OTP // Двухфакторный СМС-код
+  TELEGRAM_OTP // Подтверждение через Telegram-бота (MVP)
+  DRAWN_SIGNATURE // Графическая подпись на экране (MVP)
+}
+
+model Poll {
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId           String     @map("osi_id") @db.Uuid
+  buildingId      String     @map("building_id") @db.Uuid
+  title           String
+  description     String?    @db.Text
+  type            PollType   @default(INFORMATIONAL)
+  quorumType      QuorumType @default(BY_AREA) @map("quorum_type")
+  quorumThreshold Float      @default(50.0) @map("quorum_threshold")
+
+  startDate DateTime @map("start_date")
+  endDate   DateTime @map("end_date")
+  isClosed  Boolean  @default(false) @map("is_closed")
+
+  totalBuildingArea Float @map("total_building_area")
+  totalApartments   Int   @map("total_apartments")
+
+  building Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  options  PollOption[]
+  votes    Vote[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@map("poll")
+}
+
+model PollOption {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId  String @map("osi_id") @db.Uuid
+  pollId String @map("poll_id") @db.Uuid
+  text   String
+
+  poll  Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes Vote[]
+
+  @@index([osiId])
+  @@map("poll_option")
+}
+
+model Vote {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId       String  @map("osi_id") @db.Uuid
+  pollId      String  @map("poll_id") @db.Uuid
+  optionId    String  @map("option_id") @db.Uuid
+  apartmentId String  @map("apartment_id") @db.Uuid
+  userId      String? @map("user_id") @db.Uuid
+
+  voterIin     String     @map("voter_iin")
+  voterName    String     @map("voter_name")
+  squareMeters Float      @map("square_meters")
+  authMethod   AuthMethod @map("auth_method")
+
+  signatureHash String  @map("signature_hash")
+  signatureUrl  String? @map("signature_url")
+  ipAddress     String? @map("ip_address")
+
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  option PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  user   User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([pollId, apartmentId])
+  @@index([osiId])
+  @@index([pollId])
+  @@index([userId])
+  @@map("vote")
+}
