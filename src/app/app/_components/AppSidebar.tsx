@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Building2, Settings } from "lucide-react";
@@ -16,11 +17,9 @@ export type SidebarProps = {
   userInitials: string;
   osiOptions: { id: string; name: string }[];
   activeOsiId: string;
-  buildings: { id: string; address: string }[]; // председатель; у жителя пусто
+  buildings: { id: string; address: string }[];
 };
 
-// Сайдбар кабинета по макету (ui-redesign.md §2–3): брендблок, навигация (общий список с
-// мобильным меню — navItems.ts), user-card внизу. Права проверяются на сервере в страницах.
 export function AppSidebar({
   role,
   brandSubtitle,
@@ -28,16 +27,25 @@ export function AppSidebar({
   userInitials,
   osiOptions,
   activeOsiId,
-  buildings,
+  buildings = [],
 }: SidebarProps) {
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
 
-  // Активный дом председателя: из пути, иначе первый (для ссылок разделов).
-  const buildingFromPath = pathname.match(/^\/app\/buildings\/([^/]+)/)?.[1];
-  const items = buildNavItems(role, buildingFromPath ?? buildings[0]?.id);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Вычисление пути и ссылок навигации
+  const currentPath = pathname ?? "";
+  const buildingFromPath = currentPath.match(/^\/app\/buildings\/([^/]+)/)?.[1];
+  const defaultBuildingId = buildings?.[0]?.id;
+  const activeBuildingId = buildingFromPath ?? defaultBuildingId;
+  const items = buildNavItems(role, activeBuildingId);
 
   return (
     <div className="flex h-full flex-col p-4">
+      {/* Шапка сайдбара */}
       <div className="px-2 pb-4">
         <div className="flex items-center gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
@@ -48,48 +56,68 @@ export function AppSidebar({
             <p className="m-0 truncate text-xs text-muted-foreground">{brandSubtitle}</p>
           </div>
         </div>
-        {osiOptions.length > 1 && (
+
+        {/* Переключатели отрисовываются после монтирования для исключения расхождений */}
+        {mounted && osiOptions.length > 1 && (
           <div className="mt-2">
             <OsiSwitcher options={osiOptions} activeOsiId={activeOsiId} />
           </div>
         )}
-        {role === "chairman" && <BuildingSwitcher buildings={buildings} />}
+        {mounted && role === "chairman" && <BuildingSwitcher buildings={buildings} />}
       </div>
 
-      <nav aria-label="Разделы кабинета" className="flex flex-col gap-1">
-        {items.map(({ href, label, icon: Icon, secondary }) => {
-          const active = isNavActive(href, pathname);
-          return (
-            <Link
-              key={href}
-              href={href}
-              aria-current={active ? "page" : undefined}
-              className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] no-underline transition-colors ${
-                active
-                  ? "bg-accent font-semibold text-accent-foreground"
-                  : `font-medium text-muted-foreground hover:bg-muted ${secondary ? "text-sm" : ""}`
-              }`}
-            >
-              <Icon aria-hidden size={19} />
-              {label}
-            </Link>
-          );
-        })}
-        {role === "chairman" && (
-          <span
-            aria-disabled
-            title="Раздел в разработке"
-            className="flex cursor-not-allowed items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] font-medium text-muted-foreground/50"
-          >
-            <Settings aria-hidden size={19} />
-            Настройки
-            <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold">
-              скоро
-            </span>
-          </span>
+      {/* Навигационное меню */}
+      <nav aria-label="Разделы кабинета" className="flex flex-1 flex-col gap-1">
+        {!mounted ? (
+          // 🛡️ Заглушка (скелетон) со сбережением высоты на секунду гидратации.
+          // Исключает Hydration Error и предотвращает скачок/схлопывание интерфейса.
+          Array.from({ length: 4 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-11 w-full animate-pulse rounded-xl bg-muted/40"
+              aria-hidden
+            />
+          ))
+        ) : (
+          <>
+            {items.map(({ href, label, icon: Icon, secondary }) => {
+              const active = isNavActive(href, currentPath);
+
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] no-underline transition-colors ${
+                    active
+                      ? "bg-accent font-semibold text-accent-foreground"
+                      : `font-medium text-muted-foreground hover:bg-muted ${secondary ? "text-sm" : ""}`
+                  }`}
+                >
+                  <Icon aria-hidden size={19} />
+                  {label}
+                </Link>
+              );
+            })}
+
+            {role === "chairman" && (
+              <span
+                aria-disabled
+                title="Раздел в разработке"
+                className="flex cursor-not-allowed items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] font-medium text-muted-foreground/50"
+              >
+                <Settings aria-hidden size={19} />
+                Настройки
+                <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold">
+                  скоро
+                </span>
+              </span>
+            )}
+          </>
         )}
       </nav>
 
+      {/* Подвал с карточкой пользователя */}
       <div className="mt-auto grid gap-2">
         <div className="flex items-center gap-3 rounded-2xl bg-secondary p-3">
           <span

@@ -1,4 +1,5 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:async';
 import 'api_client.dart';
 
@@ -12,6 +13,7 @@ class PushRepository {
   StreamSubscription<String>? _refreshSub;
 
   Future<void> register() async {
+    if (dotenv.env['ENABLE_PUSH'] == 'false') return;
     final messaging = FirebaseMessaging.instance;
     final settings = await messaging.requestPermission();
     if (settings.authorizationStatus == AuthorizationStatus.denied) return;

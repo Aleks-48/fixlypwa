@@ -6,6 +6,7 @@ import 'package:fixly_app/core/auth_repository.dart';
 import 'package:fixly_app/core/master_repository.dart';
 import 'package:fixly_app/core/request_labels.dart';
 import 'package:fixly_app/screens/login_page.dart';
+import 'package:fixly_app/screens/legal_docs_sheet.dart';
 
 // Анкета мастера (REQ-068, onboarding-unified.md §0 вопрос 5: карточка есть → анкета →
 // модерация). Одобрение — вручную суперадмином на сайте (/admin/masters, ADR-0008) — витрина
@@ -165,6 +166,48 @@ class _MasterApplicationScreenState extends State<MasterApplicationScreen> {
             ),
             const SizedBox(height: AppDimens.spaceMd),
             _field(c, controller: _bioCtrl, label: 'О себе (опционально)', icon: LucideIcons.info, maxLines: 3),
+            const SizedBox(height: AppDimens.spaceMd),
+
+            // Юридическое согласие мастера
+            GestureDetector(
+              onTap: () => LegalDocsSheet.show(context, initialTab: LegalDocTab.master),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: c.card,
+                  borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                  border: Border.all(color: c.cardBorder),
+                ),
+                child: Row(
+                  children: [
+                    Icon(LucideIcons.shieldCheck, color: c.primary, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          text: 'Подавая анкету, вы принимаете ',
+                          style: TextStyle(color: c.textSecondary, fontSize: 12, height: 1.3),
+                          children: [
+                            TextSpan(
+                              text: 'Оферту мастера (3%)',
+                              style: TextStyle(color: c.primary, fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                            ),
+                            const TextSpan(text: ' и '),
+                            TextSpan(
+                              text: 'Техрегламент',
+                              style: TextStyle(color: c.primary, fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                            ),
+                            const TextSpan(text: '.'),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: c.textTertiary, size: 18),
+                  ],
+                ),
+              ),
+            ),
+
             if (_error != null) ...[
               const SizedBox(height: AppDimens.spaceSm),
               Text(_error!, style: TextStyle(color: c.danger)),

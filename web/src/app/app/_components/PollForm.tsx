@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
+import { useRouter } from "next/navigation";
+import { useState,useTransition } from "react";
 import { createPollAction } from "../buildings/[buildingId]/polls/actions";
 
 interface PollFormProps {
@@ -11,39 +12,36 @@ interface PollFormProps {
 }
 
 export function PollForm({ buildingId }: PollFormProps) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const [question, setQuestion] = useState("");
-  const [options, setOptions] = useState<string[]>(["Да", "Нет"]);
+  const [options, setOptions] = useState<string[]>([t("btn_yes"), t("btn_no")]);
   const [error, setError] = useState<string | null>(null);
 
-  // Добавление нового варианта
   const handleAddOption = () => {
     setOptions((prev) => [...prev, ""]);
   };
 
-  // Обновление конкретного варианта
   const handleOptionChange = (index: number, value: string) => {
     const updated = [...options];
     updated[index] = value;
     setOptions(updated);
   };
 
-  // Отправка формы
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // Валидация прямо на клиенте перед отправкой
     if (!question.trim()) {
-      setError("Введите вопрос");
+      setError(t("error_enter_question"));
       return;
     }
 
     const filteredOptions = options.map((o) => o.trim()).filter(Boolean);
     if (filteredOptions.length < 2) {
-      setError("Заполните минимум 2 варианта ответа");
+      setError(t("error_min_two_options"));
       return;
     }
 
@@ -51,28 +49,27 @@ export function PollForm({ buildingId }: PollFormProps) {
       const formData = new FormData();
       formData.append("buildingId", buildingId);
       formData.append("question", question.trim());
-      formData.append("title", question.trim()); // Передаем и title, и question для совместимости
+      formData.append("title", question.trim());
       
       filteredOptions.forEach((opt) => {
         formData.append("options", opt);
       });
 
       try {
-        // Если у вас вызывается Server Action:
         const res = await createPollAction(buildingId, formData);
         
         if (res && !res.success) {
-          setError(res.error || "Не удалось создать опрос");
+          setError(res.error || t("error_poll_create_failed"));
           return;
         }
 
-        // Очищаем форму при успехе
         setQuestion("");
-        setOptions(["Да", "Нет"]);
+        setOptions([t("btn_yes"), t("btn_no")]);
         router.refresh();
-      } catch (err: any) {
-        // Если экшен бросает исключение или валидация упала
-        setError(err?.message || "Произошла ошибка при сохранении");
+      } catch (caughtError) {
+const err = caughtError instanceof Error ? caughtError : new Error(String(caughtError));
+
+        setError(err?.message || t("error_save_failed"));
       }
     });
   };
@@ -80,23 +77,23 @@ export function PollForm({ buildingId }: PollFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-1.5">
-        <label className="text-xs font-medium text-muted-foreground">Вопрос</label>
+        <label className="text-xs font-medium text-muted-foreground">{t("label_question")}</label>
         <Input
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Например: Ремонт крыши в 3 подъезде"
+          placeholder={t("placeholder_poll_question")}
           disabled={isPending}
         />
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground">Варианты ответов</label>
+        <label className="text-xs font-medium text-muted-foreground">{t("label_answer_options")}</label>
         {options.map((option, idx) => (
           <Input
             key={idx}
             value={option}
             onChange={(e) => handleOptionChange(idx, e.target.value)}
-            placeholder={`Вариант ${idx + 1}`}
+            placeholder={`${t("label_option")} ${idx + 1}`}
             disabled={isPending}
           />
         ))}
@@ -110,14 +107,13 @@ export function PollForm({ buildingId }: PollFormProps) {
           onClick={handleAddOption}
           disabled={isPending}
         >
-          + Вариант
+          + {t("label_option")}
         </Button>
         <Button type="submit" size="sm" disabled={isPending}>
-          {isPending ? "Создание..." : "Создать опрос"}
+          {isPending ? t("status_creating") : t("label_create_poll")}
         </Button>
       </div>
 
-      {/* Вывод понятной ошибки вместо красного "Required" */}
       {error && (
         <p className="text-xs font-medium text-destructive mt-1">{error}</p>
       )}

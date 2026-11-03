@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ok, Errors } from "@/lib/http";
 import { parseIdentifier } from "@/lib/identifier";
 import { verifyOtp } from "@/lib/auth/otp";
-import { createSession, setSessionCookie, pickDefaultOsi, isMobileClient } from "@/lib/auth/session";
+import { setSessionCookie, pickDefaultOsi, isMobileClient } from "@/lib/auth/session";
 import { publicUser } from "@/lib/auth/guards";
 
 export const runtime = "nodejs";
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   const identifier = parseIdentifier(raw);
   if (!identifier) return Errors.validation("Некорректный телефон или email");
 
-  const result = await verifyOtp(identifier, parsed.data.code, parsed.data.fullName);
+  const result = await verifyOtp(identifier, parsed.data.code, parsed.data.fullName, true);
   if (!result.ok) {
     // Не различаем «неверный код» и «истёк» слишком детально, но подскажем повтор.
     const message =
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   }
 
   const activeOsiId = pickDefaultOsi(result.user.roles);
-  const { token, expiresAt } = await createSession(result.user.id, activeOsiId);
+  const { token, expiresAt } = result.session!;
 
   // Мобильный клиент (ADR-0012 §1, REQ-123): токен в теле ответа, без cookie.
   if (isMobileClient(req)) {

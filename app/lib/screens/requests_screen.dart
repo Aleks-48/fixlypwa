@@ -83,6 +83,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
         iconTheme: IconThemeData(color: c.textPrimary),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'create_request_fab',
         onPressed: _createNew,
         backgroundColor: c.primary,
         child: const Icon(Icons.add, color: Colors.white),

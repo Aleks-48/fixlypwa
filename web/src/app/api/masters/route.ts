@@ -1,18 +1,25 @@
-import { NextResponse } from "next/server";
-import { getCurrentAuth } from "@/lib/auth/session";
-import { listApprovedMasters } from "@/lib/masters/service";
+import { requireChairman } from "@/lib/auth/chairmanPage";
+import {
+listMastersForAssignment
+} from "@/lib/masters/reviewService";
 import type { RequestCategory } from "@prisma/client";
+import { NextRequest,NextResponse } from "next/server";
 
-// GET /api/masters — каталог проверенных мастеров с поиском и фильтром по категории (REQ-072)
-export async function GET(req: Request) {
-  const auth = await getCurrentAuth();
-  if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+// POST /api/masters/assign — назначить мастера на заявку
+// POST /api/masters/add-contact — добавить мастера из контактов
+// GET  /api/masters/list — список мастеров для дропдауна
 
-  const { searchParams } = new URL(req.url);
-  const city = searchParams.get("city") || "Кокшетау";
-  const category = (searchParams.get("category") as RequestCategory) || undefined;
+export async function GET(req: NextRequest) {
+  const { osiId } = await requireChairman();
+  // Достаём город из здания ОСИ
+  const { prisma } = await import("@/lib/db/prisma");
+  const building = await prisma.building.findFirst({ where: { osiId } });
+  const city = building?.city ?? "Кокшетау";
 
-  const masters = await listApprovedMasters(city, category);
+  const category = req.nextUrl.searchParams.get("category") as
+    | RequestCategory
+    | undefined;
 
-  return NextResponse.json({ masters });
+  const masters = await listMastersForAssignment(city, category || undefined);
+  return NextResponse.json(masters);
 }

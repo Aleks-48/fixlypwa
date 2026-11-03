@@ -7,6 +7,7 @@ import { getBuilding } from "@/lib/onboarding/service";
 import { getReport, type ReportData } from "@/lib/finance/report";
 import { reportPeriodLabel } from "@/lib/finance/periodLabel";
 import { ReportView } from "../../../../_components/ReportView";
+import { ExcelDownloadButton } from "../../../../_components/ExcelDownloadButton";
 
 export const dynamic = "force-dynamic";
 
@@ -31,12 +32,15 @@ export default async function ReportViewPage({
 
   return (
     <main className="max-w-3xl px-5 pb-16 pt-6 lg:px-7">
-      <Link
-        href={`/app/buildings/${buildingId}/reports`}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground no-underline print:hidden"
-      >
-        <ArrowLeft aria-hidden size={14} /> Отчёты
-      </Link>
+      <div className="flex items-center justify-between gap-3 print:hidden">
+        <Link
+          href={`/app/buildings/${buildingId}/reports`}
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground no-underline"
+        >
+          <ArrowLeft aria-hidden size={14} /> Отчёты
+        </Link>
+        <ExcelDownloadButton reportId={reportId} />
+      </div>
       <div className="mt-4">
         <ReportView data={report.data as ReportData} address={building.address} period={period} />
       </div>

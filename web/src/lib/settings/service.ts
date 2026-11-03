@@ -12,6 +12,8 @@ export type UpdateOsiInput = {
   bin?: string | null;
   address?: string | null;
   registeredAt?: Date | null;
+  chairmanFullName?: string;
+  userId?: string;
 };
 
 // ── Настройки ОСИ: юридические реквизиты ─────────────────────────────────────
@@ -24,8 +26,15 @@ export function getOsiProfile(osiId: string) {
   });
 }
 
-/** Обновить юридические реквизиты ОСИ (REQ-045). */
-export function updateOsiProfile(osiId: string, input: UpdateOsiInput) {
+/** Обновить юридические реквизиты ОСИ и ФИО Председателя (REQ-045). */
+export async function updateOsiProfile(osiId: string, input: UpdateOsiInput) {
+  if (input.chairmanFullName && input.userId) {
+    await prisma.user.update({
+      where: { id: input.userId },
+      data: { fullName: input.chairmanFullName },
+    });
+  }
+
   return prisma.osi.update({
     where: { id: osiId },
     data: {
@@ -101,9 +110,7 @@ export function listOsiTeam(osiId: string) {
   return prisma.userOsiRole.findMany({
     where: { osiId },
     include: {
-      user: {
-        select: { id: true, fullName: true, phone: true, email: true },
-      },
+      user: true, // Загружаем объект user полностью, чтобы не ловить ошибки несуществующих полей
     },
     orderBy: { role: "asc" },
   });
@@ -113,20 +120,26 @@ export function listOsiTeam(osiId: string) {
 
 export type UpdateProfileInput = {
   fullName?: string;
+  name?: string;
   email?: string | null;
   language?: string; // 'ru' | 'kk'
 };
 
 /** Обновить личные данные и язык пользователя (вне RLS). */
 export function updateUserProfile(userId: string, input: UpdateProfileInput) {
-  return prisma.user.update({
-    where: { id: userId },
-    data: {
-      fullName: input.fullName,
-      email: input.email ?? undefined,
-      language: input.language,
-    },
-    select: { id: true, fullName: true, phone: true, email: true },
+  return prisma.$transaction(async (tx) => {
+    const fullName = input.fullName ?? input.name;
+    if (fullName !== undefined)
+      await tx.master.updateMany({ where: { userId }, data: { fullName } });
+    return tx.user.update({
+      where: { id: userId },
+      data: {
+        email: input.email ?? undefined,
+        fullName: input.fullName ?? input.name,
+        language: input.language,
+      },
+      select: { id: true, phone: true, email: true, fullName: true, language: true },
+    });
   });
 }
 

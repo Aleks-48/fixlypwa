@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AnnouncementForm } from "../../../_components/AnnouncementForm";
 import { PageBody, PageHeader } from "../../../_components/PageHeader";
+import { getTranslation } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export default async function BuildingAnnouncementsPage({
 }: {
   params: Promise<{ buildingId: string }>;
 }) {
+  const { t } = await getTranslation();
   const auth = await getCurrentAuth();
   if (!auth) redirect("/login");
   const osiId = activeChairmanOsi(auth);
@@ -30,8 +32,8 @@ export default async function BuildingAnnouncementsPage({
   return (
     <>
       <PageHeader
-        title="Объявления"
-        subtitle="Публикуются в кабинетах жителей"
+        title={t("title_chairman_announcements")}
+        subtitle={t("subtitle_announcements")}
         back={{ href: `/app/buildings/${buildingId}`, label: building.address }}
       />
       <PageBody wide>

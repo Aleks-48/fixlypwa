@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PollForm } from "../../../_components/PollForm";
 import { PollCard } from "../../../_components/PollCard";
 import { PageBody, PageHeader } from "../../../_components/PageHeader";
+import { getTranslation } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export default async function BuildingPollsPage({
 }: {
   params: Promise<{ buildingId: string }>;
 }) {
+  const { t } = await getTranslation();
   const auth = await getCurrentAuth();
   if (!auth) redirect("/login");
   const osiId = activeChairmanOsi(auth);
@@ -32,7 +34,7 @@ export default async function BuildingPollsPage({
   return (
     <>
       <PageHeader
-        title="Голосования"
+        title={t("title_chairman_polls")}
         subtitle={`${open.length} активных · ${polls.length - open.length} завершённых`}
         back={{ href: `/app/buildings/${buildingId}`, label: building.address }}
       />

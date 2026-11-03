@@ -5,6 +5,7 @@ import { RequestMessageForm } from "./RequestMessageForm";
 import { CategoryTile } from "./categoryIcons";
 import { StatusTimeline } from "./StatusTimeline";
 import { MarketplacePanel, type ListingView, type OfferView } from "./MarketplacePanel";
+import { MasterSelect } from "./MasterSelect"; // <--- 1. ДОБАВЛЕН ИМПОРТ (если в MasterSelect export default — уберите фигурные скобки)
 
 type Message = { id: string; authorUserId: string; text: string; createdAt: Date };
 type Req = {
@@ -16,6 +17,7 @@ type Req = {
   createdAt: Date;
   messages: Message[];
   photoUrls?: string[];
+  masterId?: string | null; // <--- 2. ДОБАВЛЕНО ПОЛЕ ДЛЯ МАСТЕРА
 };
 
 // Тон бейджа статуса (макет: Принята — красный, В работе — янтарный, Решена — зелёный).
@@ -25,8 +27,6 @@ const STATUS_TONE: Record<string, string> = {
   RESOLVED: "bg-success-soft text-success",
 };
 
-// Карточка заявки с тредом. canChangeStatus → председателю показываем контролы статуса,
-// иначе — бейдж + таймлайн. Автор реплики определяется сравнением с authorUserId заявки.
 export function RequestCard({
   request,
   canChangeStatus,
@@ -34,7 +34,6 @@ export function RequestCard({
 }: {
   request: Req;
   canChangeStatus: boolean;
-  // Только на странице «Заявки дома» (председатель) — публикация мастерам (marketplace.md).
   marketplace?: { listing: ListingView | null; offers: OfferView[] };
 }) {
   return (
@@ -68,6 +67,17 @@ export function RequestCard({
         {!canChangeStatus && (
           <div className="mt-3">
             <StatusTimeline status={request.status} />
+          </div>
+        )}
+
+        {/* 3. ВЫБОР МАСТЕРА ДЛЯ ПРЕДСЕДАТЕЛЯ */}
+        {canChangeStatus && (
+          <div className="mt-3">
+            <MasterSelect
+              requestId={request.id}
+              currentMasterId={request.masterId}
+              category={request.category as any}
+            />
           </div>
         )}
 

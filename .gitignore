@@ -37,6 +37,12 @@ playwright/.cache/
 
 # logs / os
 *.log
+.local-backups/
+/.local-run/
+/web/storage/
+/web/.next-buildcheck/
+/.local-tester-check/
+/artifacts/
 .DS_Store
 
 # local tool state

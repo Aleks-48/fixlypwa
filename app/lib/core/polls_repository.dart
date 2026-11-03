@@ -1,6 +1,6 @@
 import 'api_client.dart';
 
-// Опросы дома, lite-версия (срез 23, features.md §C). Контракт сверен с web/src/lib/polls/
+// Опросы дома, lite-версия. Контракт сверен с web/src/lib/polls/
 // service.ts: POST /api/polls и POST /api/polls/vote возвращают ОБРЕЗАННЫЕ объекты
 // ({poll:{id,question}} / {voted:true}) — актуальные счётчики только через повторный list().
 
@@ -12,9 +12,9 @@ class PollOption {
   PollOption({required this.id, required this.label, required this.votes});
 
   factory PollOption.fromJson(Map<String, dynamic> json) => PollOption(
-        id: json['id'] as String,
-        label: json['label'] as String,
-        votes: json['votes'] as int,
+        id: (json['id'] as String?) ?? '',
+        label: (json['label'] as String?) ?? '',
+        votes: (json['votes'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -40,14 +40,16 @@ class Poll {
   bool get voted => myOptionId != null;
 
   factory Poll.fromJson(Map<String, dynamic> json) => Poll(
-        id: json['id'] as String,
-        question: json['question'] as String,
-        deadline: json['deadline'] != null ? DateTime.parse(json['deadline'] as String) : null,
-        closed: json['closed'] as bool,
-        totalVotes: json['totalVotes'] as int,
+        id: (json['id'] as String?) ?? '',
+        question: (json['question'] as String?) ?? '',
+        deadline: json['deadline'] != null 
+            ? DateTime.tryParse(json['deadline'].toString()) 
+            : null,
+        closed: (json['closed'] as bool?) ?? false,
+        totalVotes: (json['totalVotes'] as num?)?.toInt() ?? 0,
         myOptionId: json['myOptionId'] as String?,
         options: ((json['options'] as List?) ?? const [])
-            .cast<Map<String, dynamic>>()
+            .whereType<Map<String, dynamic>>()
             .map(PollOption.fromJson)
             .toList(),
       );
@@ -63,9 +65,11 @@ class PollsRepository {
   // дом сам); житель может не передавать — сервер найдёт дом через его квартиру.
   Future<List<Poll>> list({String? buildingId}) async {
     final path = buildingId != null ? '/api/polls?buildingId=$buildingId' : '/api/polls';
-    final data = await _api.get(path) as Map<String, dynamic>;
+    final rawData = await _api.get(path);
+    final data = rawData is Map<String, dynamic> ? rawData : <String, dynamic>{};
+    
     return ((data['polls'] as List?) ?? const [])
-        .cast<Map<String, dynamic>>()
+        .whereType<Map<String, dynamic>>()
         .map(Poll.fromJson)
         .toList();
   }

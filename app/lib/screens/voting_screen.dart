@@ -1,3 +1,4 @@
+// lib/screens/voting_screen.dart
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/theme/app_theme.dart';
@@ -222,7 +223,7 @@ class _VotingScreenState extends State<VotingScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: c.primary.withOpacity(0.12),
+                        color: c.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
@@ -333,7 +334,7 @@ class _VotingScreenState extends State<VotingScreen> {
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
-                          color: isSelected ? c.primary.withOpacity(0.08) : c.card,
+                          color: isSelected ? c.primary.withValues(alpha: 0.08) : c.card,
                           borderRadius: BorderRadius.circular(AppDimens.radiusSm),
                           border: Border.all(
                             color: isSelected ? c.primary : c.cardBorder,
@@ -342,18 +343,30 @@ class _VotingScreenState extends State<VotingScreen> {
                         ),
                         child: Row(
                           children: [
-                            Radio<int>(
-                              value: optIndex,
-                              groupValue: poll.selectedOptionIndex,
-                              activeColor: c.primary,
-                              onChanged: poll.isSigned
-                                  ? null
-                                  : (val) {
-                                      setState(() {
-                                        poll.selectedOptionIndex = val;
-                                      });
-                                    },
+                            Container(
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isSelected ? c.primary : c.textTertiary,
+                                  width: 2,
+                                ),
+                              ),
+                              child: isSelected
+                                  ? Center(
+                                      child: Container(
+                                        width: 10,
+                                        height: 10,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: c.primary,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
                             ),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Text(
                                 poll.options[optIndex],
@@ -381,9 +394,9 @@ class _VotingScreenState extends State<VotingScreen> {
                       ? Container(
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: c.success.withOpacity(0.12),
+                            color: c.success.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(AppDimens.radiusSm),
-                            border: Border.all(color: c.success.withOpacity(0.3)),
+                            border: Border.all(color: c.success.withValues(alpha: 0.3)),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,

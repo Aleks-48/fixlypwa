@@ -1,22 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:fixly_app/core/protected_files.dart';
 import 'package:fixly_app/theme/app_theme.dart';
-
-class AppDocument {
-  final String id;
-  final String title;
-  final String category;
-  final String size;
-  final String date;
-
-  AppDocument({
-    required this.id,
-    required this.title,
-    required this.category,
-    required this.size,
-    required this.date,
-  });
-}
+import 'package:fixly_app/core/documents_repository.dart';
+import 'package:fixly_app/core/app_localizations.dart';
 
 class DocumentsScreen extends StatefulWidget {
   const DocumentsScreen({super.key});
@@ -26,55 +13,73 @@ class DocumentsScreen extends StatefulWidget {
 }
 
 class _DocumentsScreenState extends State<DocumentsScreen> {
-  String _selectedCategory = 'Все';
+  String _selectedCategory = 'ALL';
   String _searchQuery = '';
 
-  final List<String> _categories = [
-    'Все',
-    'Устав и учредительные',
-    'Протоколы собраний',
-    'Сметы и отчёты',
-    'Договоры',
-  ];
+  List<OsiDocument> _documents = [];
+  bool _loading = true;
+  String? _error;
 
-  final List<AppDocument> _documents = [
-    AppDocument(
-      id: '1',
-      title: 'Устав ОСИ «ЖК Комфорт»',
-      category: 'Устав и учредительные',
-      size: '2.4 МБ',
-      date: '12.01.2025',
-    ),
-    AppDocument(
-      id: '2',
-      title: 'Протокол общего собрания №4',
-      category: 'Протоколы собраний',
-      size: '1.1 МБ',
-      date: '10.02.2026',
-    ),
-    AppDocument(
-      id: '3',
-      title: 'Годовой финансовый отчёт за 2025 год',
-      category: 'Сметы и отчёты',
-      size: '4.8 МБ',
-      date: '15.01.2026',
-    ),
-    AppDocument(
-      id: '4',
-      title: 'Договор с обслуживающей компанией',
-      category: 'Договоры',
-      size: '850 КБ',
-      date: '01.03.2026',
-    ),
-  ];
+  static const Map<String, String> _categoryLabels = {
+    'ALL': 'Все документы',
+    'PROTOCOL': 'Протоколы собраний',
+    'CHARTER': 'Устав и учредительные',
+    'ESTIMATE': 'Сметы и отчёты',
+    'CONTRACT': 'Договоры',
+    'OTHER': 'Прочее',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDocuments();
+  }
+
+  Future<void> _loadDocuments() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final docs = await DocumentsRepository.instance.fetchDocuments();
+      if (mounted) {
+        setState(() {
+          _documents = docs;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _openDocument(OsiDocument doc) async {
+    try {
+      await openProtectedFile(doc.fileUrl);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка открытия документа: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
 
     final filteredDocs = _documents.where((doc) {
-      final matchesCategory = _selectedCategory == 'Все' || doc.category == _selectedCategory;
-      final matchesSearch = doc.title.toLowerCase().contains(_searchQuery.toLowerCase());
+      final matchesCategory = _selectedCategory == 'ALL' || doc.category == _selectedCategory;
+      final query = _searchQuery.toLowerCase().trim();
+      final matchesSearch = query.isEmpty ||
+          doc.title.toLowerCase().contains(query) ||
+          (doc.description?.toLowerCase().contains(query) ?? false);
       return matchesCategory && matchesSearch;
     }).toList();
 
@@ -83,8 +88,18 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       appBar: AppBar(
         backgroundColor: c.background,
         elevation: 0,
-        title: Text('Библиотека документов', style: TextStyle(color: c.textPrimary)),
+        title: Text(
+          AppLocalizations.tr('nav_documents'),
+          style: TextStyle(color: c.textPrimary, fontWeight: AppTypography.bold),
+        ),
         iconTheme: IconThemeData(color: c.textPrimary),
+        actions: [
+          IconButton(
+            icon: Icon(LucideIcons.refreshCw, color: c.textPrimary, size: 20),
+            onPressed: _loadDocuments,
+            tooltip: 'Обновить',
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -92,22 +107,30 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: AppDimens.spaceMd,
-              vertical: AppDimens.spaceSm,
+              vertical: AppDimens.spaceXs,
             ),
             child: TextField(
               style: TextStyle(color: c.textPrimary),
               onChanged: (val) => setState(() => _searchQuery = val),
               decoration: InputDecoration(
-                hintText: 'Поиск по названию...',
+                hintText: 'Поиск документа...',
                 hintStyle: TextStyle(color: c.textTertiary),
-                prefixIcon: Icon(LucideIcons.search, color: c.textTertiary, size: 20),
+                prefixIcon: Icon(LucideIcons.search, color: c.textTertiary, size: 18),
                 filled: true,
-                fillColor: c.surfaceVariant,
+                fillColor: c.card,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                  borderSide: BorderSide.none,
+                  borderSide: BorderSide(color: c.cardBorder),
                 ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                  borderSide: BorderSide(color: c.cardBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                  borderSide: BorderSide(color: c.primary),
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
               ),
             ),
           ),
@@ -117,24 +140,25 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
               horizontal: AppDimens.spaceMd,
-              vertical: AppDimens.spaceXs,
+              vertical: 6,
             ),
             child: Row(
-              children: _categories.map((cat) {
-                final selected = _selectedCategory == cat;
+              children: _categoryLabels.entries.map((entry) {
+                final selected = _selectedCategory == entry.key;
                 return Padding(
                   padding: const EdgeInsets.only(right: AppDimens.spaceXs),
                   child: ChoiceChip(
-                    label: Text(cat),
+                    label: Text(entry.value),
                     selected: selected,
                     onSelected: (val) {
-                      if (val) setState(() => _selectedCategory = cat);
+                      if (val) setState(() => _selectedCategory = entry.key);
                     },
-                    selectedColor: c.primary.withOpacity(0.15),
+                    selectedColor: c.primary.withValues(alpha: 0.15),
                     backgroundColor: c.card,
                     labelStyle: TextStyle(
                       color: selected ? c.primary : c.textSecondary,
                       fontWeight: selected ? AppTypography.semibold : AppTypography.regular,
+                      fontSize: 13,
                     ),
                     side: BorderSide(color: selected ? c.primary : c.cardBorder),
                   ),
@@ -143,76 +167,177 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
             ),
           ),
 
-          const SizedBox(height: AppDimens.spaceSm),
+          const SizedBox(height: AppDimens.spaceXs),
 
           // Список файлов
           Expanded(
-            child: filteredDocs.isEmpty
-                ? Center(
-                    child: Text('Документы не найдены', style: TextStyle(color: c.textTertiary)),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(AppDimens.spaceMd),
-                    itemCount: filteredDocs.length,
-                    itemBuilder: (context, index) {
-                      final doc = filteredDocs[index];
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: AppDimens.spaceSm),
-                        padding: const EdgeInsets.all(AppDimens.spaceMd),
-                        decoration: BoxDecoration(
-                          color: c.card,
-                          borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                          border: Border.all(color: c.cardBorder),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: c.primary.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(AppDimens.radiusSm),
-                              ),
-                              child: Icon(LucideIcons.fileText, color: c.primary, size: 24),
-                            ),
-                            const SizedBox(width: AppDimens.spaceSm),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    doc.title,
-                                    style: TextStyle(
-                                      color: c.textPrimary,
-                                      fontWeight: AppTypography.semibold,
-                                      fontSize: 14,
-                                    ),
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? _buildError(c)
+                    : filteredDocs.isEmpty
+                        ? _buildEmpty(c)
+                        : RefreshIndicator(
+                            onRefresh: _loadDocuments,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(AppDimens.spaceMd),
+                              itemCount: filteredDocs.length,
+                              itemBuilder: (context, index) {
+                                final doc = filteredDocs[index];
+                                final catLabel = _categoryLabels[doc.category] ?? doc.category;
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: AppDimens.spaceSm),
+                                  padding: const EdgeInsets.all(AppDimens.spaceMd),
+                                  decoration: BoxDecoration(
+                                    color: c.card,
+                                    borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                                    border: Border.all(color: c.cardBorder),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${doc.date} • ${doc.size}',
-                                    style: TextStyle(
-                                      color: c.textTertiary,
-                                      fontSize: AppTypography.caption,
-                                    ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: c.primary.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(AppDimens.radiusSm),
+                                        ),
+                                        child: Icon(
+                                          doc.category == 'PROTOCOL'
+                                              ? LucideIcons.shieldCheck
+                                              : LucideIcons.fileText,
+                                          color: c.primary,
+                                          size: 22,
+                                        ),
+                                      ),
+                                      const SizedBox(width: AppDimens.spaceSm),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              doc.title,
+                                              style: TextStyle(
+                                                color: c.textPrimary,
+                                                fontWeight: AppTypography.bold,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            if (doc.description != null && doc.description!.isNotEmpty) ...[
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                doc.description!,
+                                                style: TextStyle(
+                                                  color: c.textSecondary,
+                                                  fontSize: 12,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                            const SizedBox(height: 6),
+                                            Wrap(
+                                              crossAxisAlignment: WrapCrossAlignment.center,
+                                              spacing: 6,
+                                              children: [
+                                                Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Icon(LucideIcons.calendar, size: 12, color: c.textTertiary),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      doc.formattedDate,
+                                                      style: TextStyle(
+                                                        color: c.textTertiary,
+                                                        fontSize: 11,
+                                                        fontWeight: AppTypography.medium,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                Container(
+                                                  width: 3,
+                                                  height: 3,
+                                                  decoration: BoxDecoration(
+                                                    color: c.textTertiary,
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  catLabel,
+                                                  style: TextStyle(
+                                                    color: c.primary,
+                                                    fontSize: 11,
+                                                    fontWeight: AppTypography.semibold,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(LucideIcons.externalLink, color: c.primary, size: 20),
+                                        onPressed: () => _openDocument(doc),
+                                        tooltip: 'Открыть документ',
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: Icon(LucideIcons.download, color: c.primary, size: 20),
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Загрузка "${doc.title}" начата')),
                                 );
                               },
                             ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                          ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildError(AppColors c) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(LucideIcons.alertCircle, color: c.textTertiary, size: 48),
+          const SizedBox(height: AppDimens.spaceMd),
+          Text('Ошибка загрузки документов', style: TextStyle(color: c.textSecondary)),
+          const SizedBox(height: AppDimens.spaceSm),
+          ElevatedButton.icon(
+            onPressed: _loadDocuments,
+            icon: const Icon(LucideIcons.refreshCw, size: 16),
+            label: const Text('Повторить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmpty(AppColors c) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppDimens.spaceLg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.folderOpen, color: c.textTertiary, size: 56),
+            const SizedBox(height: AppDimens.spaceMd),
+            Text(
+              'Председатель пока не добавил документы',
+              style: TextStyle(
+                color: c.textPrimary,
+                fontWeight: AppTypography.bold,
+                fontSize: 16,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Официальные уставные документы, протоколы собраний и сметы появятся здесь сразу после публикации.',
+              style: TextStyle(color: c.textTertiary, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }

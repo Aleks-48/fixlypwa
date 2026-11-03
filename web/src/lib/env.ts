@@ -34,6 +34,7 @@ const schema = z.object({
   // Публичная копия — для постоянной ссылки на бота в UI (login/register), не только реактивно
   // на шаге needsTelegramLink. Не секрет, username бота публичен по своей природе.
   NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: z.string().optional(),
+  NEXT_PUBLIC_APP_URL: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(), // сверяется с X-Telegram-Bot-Api-Secret-Token
 
   // Почтовый транспорт OTP (auth-email.md §6, REQ-006): 'console' — dev-заглушка (код в лог),
@@ -62,6 +63,8 @@ const schema = z.object({
   // иначе прод с console-провайдером отдавал бы код запросившему → захват любого аккаунта
   // (security-review 2026-07-02). В проде держать 0; код виден в логе сервера (sendSms).
   OTP_DEV_ECHO: z.enum(["0", "1"]).default("0"),
+  OTP_TEST_PHONES: z.string().default(""),
+  OTP_TEST_ECHO_UNTIL: z.string().default(""),
 
   // AI-ассистент (срез 30, docs/specs/ai-assistant.md). Провайдер за интерфейсом LlmProvider —
   // тот же паттерн, что SMS_PROVIDER/EMAIL_PROVIDER: 'console' — dev-заглушка (без реального

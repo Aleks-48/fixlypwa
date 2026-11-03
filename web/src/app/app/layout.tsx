@@ -7,6 +7,10 @@ import { AppShell } from "./_components/AppShell";
 import { AppSidebar } from "./_components/AppSidebar";
 import { MobileTabBar } from "./_components/MobileTabBar";
 import { AssistantChat } from "./_components/AssistantChat";
+import { getMasterByUserId } from "@/lib/master/service";
+import { CabinetNavigation } from "@/components/CabinetNavigation";
+
+import { PwaInstallPrompt } from "./_components/PwaInstallPrompt";
 
 // Общий каркас кабинета (ui-redesign.md §2): role-aware сайдбар (lg+) + мобильный таб-бар.
 // Права на данные проверяет КАЖДАЯ страница (requireMember/activeChairmanOsi) — layout
@@ -18,6 +22,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const shell = await getShellContext();
   // Нет ОСИ (онбординг нового пользователя) — без сайдбара и таб-бара.
   if (!shell) return <>{children}</>;
+  const master = await getMasterByUserId(auth.user.id);
 
   return (
     <>
@@ -34,9 +39,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           />
         }
       >
+        {master && <div className="px-4 pt-4 sm:px-6"><CabinetNavigation current="home" homeLabel={shell.role === "chairman" ? "Кабинет председателя" : "Кабинет жителя"} /></div>}
         {children}
       </AppShell>
       <MobileTabBar role={shell.role} buildingId={shell.buildings[0]?.id} />
+      <PwaInstallPrompt />
       {isAssistantEnabled() && <AssistantChat role={shell.role} />}
     </>
   );

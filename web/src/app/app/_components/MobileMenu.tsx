@@ -10,6 +10,8 @@ import { OsiSwitcher } from "./OsiSwitcher";
 import { BuildingSwitcher } from "./BuildingSwitcher";
 import { buildNavItems, isNavActive } from "./navItems";
 import { FeatureCatalogSoonList } from "./FeatureCatalogSoonList";
+import { LanguageToggle } from "./LanguageToggle";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 // Мобильное меню-шторка (<lg): полная навигация + профиль + тема + выход + переключатели
 // ОСИ/дома. Закрывает дыру мобильной версии: сайдбар на телефоне скрыт, а в таб-баре
@@ -32,13 +34,14 @@ export function MobileMenu({
   buildings: { id: string; address: string }[];
 }) {
   const pathname = usePathname();
+  const { t } = useTranslation();
   const buildingFromPath = pathname.match(/^\/app\/buildings\/([^/]+)/)?.[1];
   const items = buildNavItems(role, buildingFromPath ?? buildings[0]?.id);
 
   return (
     <Sheet>
       <SheetTrigger
-        aria-label="Меню"
+        aria-label={t("nav_menu_aria")}
         data-testid="mobile-menu"
         className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-foreground lg:hidden"
       >
@@ -57,7 +60,7 @@ export function MobileMenu({
             <div className="min-w-0">
               <SheetTitle className="truncate text-[15px] font-bold">{userName}</SheetTitle>
               <p className="m-0 truncate text-xs text-muted-foreground">
-                {role === "chairman" ? "Председатель" : "Житель"} · {brandSubtitle}
+                {role === "chairman" ? t("role_chairman") : t("role_resident")} · {brandSubtitle}
               </p>
             </div>
           </div>
@@ -71,8 +74,8 @@ export function MobileMenu({
           )}
         </SheetHeader>
 
-        <nav aria-label="Все разделы" className="grid gap-1 overflow-y-auto px-3">
-          {items.map(({ href, label, icon: Icon, secondary }) => {
+        <nav aria-label={t("nav_all_sections_aria")} className="grid gap-1 overflow-y-auto px-3">
+          {items.map(({ href, labelKey, label, icon: Icon, secondary }) => {
             const active = isNavActive(href, pathname);
             return (
               <SheetClose asChild key={href}>
@@ -86,7 +89,7 @@ export function MobileMenu({
                   }`}
                 >
                   <Icon aria-hidden size={19} />
-                  {label}
+                  {t(labelKey) || label}
                 </Link>
               </SheetClose>
             );
@@ -95,7 +98,7 @@ export function MobileMenu({
         </nav>
 
         <div className="mt-auto flex items-center justify-between border-t border-border p-4">
-          <span className="text-sm text-muted-foreground">Тема и выход</span>
+          <LanguageToggle />
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <LogoutButton />

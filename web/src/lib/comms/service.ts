@@ -25,7 +25,17 @@ export function getOccupantBuilding(osiId: string, userId: string) {
   return forTenant(osiId, (tx) =>
     tx.occupant.findFirst({
       where: { userId },
-      select: { apartmentId: true, apartment: { select: { buildingId: true } } },
+      select: {
+        apartmentId: true,
+        apartment: {
+          select: {
+            id: true,
+            number: true,
+            buildingId: true,
+            building: { select: { id: true, address: true } },
+          },
+        },
+      },
     }),
   );
 }
@@ -150,20 +160,47 @@ export async function createRequest(
 }
 
 // Список заявок с тредом. authorUserId задан → только свои (житель); иначе все по дому (председатель).
-export function listRequests(
+export async function listRequests(
   osiId: string,
   opts: { buildingId?: string; authorUserId?: string },
 ) {
-  return forTenant(osiId, (tx) =>
+  const requests = await forTenant(osiId, (tx) =>
     tx.request.findMany({
       where: {
         ...(opts.buildingId ? { buildingId: opts.buildingId } : {}),
         ...(opts.authorUserId ? { authorUserId: opts.authorUserId } : {}),
       },
       orderBy: { createdAt: "desc" },
-      include: { messages: { orderBy: { createdAt: "asc" } } },
+      include: {
+        messages: { orderBy: { createdAt: "asc" } },
+        master: { select: { id: true, fullName: true } },
+      },
     }),
   );
+
+  // Проверяем наличие отзыва для каждой заявки (только если есть мастер и автор)
+  const { prisma } = await import("@/lib/db/prisma");
+  const requestIdsWithMaster = requests
+    .filter((r) => r.masterId && opts.authorUserId)
+    .map((r) => r.id);
+
+  let reviewedRequestIds = new Set<string>();
+  if (requestIdsWithMaster.length > 0 && opts.authorUserId) {
+    const reviews = await prisma.masterReview.findMany({
+      where: {
+        requestId: { in: requestIdsWithMaster },
+        authorUserId: opts.authorUserId,
+      },
+      select: { requestId: true },
+    });
+    reviewedRequestIds = new Set(reviews.map((r) => r.requestId!).filter(Boolean));
+  }
+
+  return requests.map((r) => ({
+    ...r,
+    masterName: r.master?.fullName ?? null,
+    hasReview: r.id ? reviewedRequestIds.has(r.id) : false,
+  }));
 }
 
 export function getRequestWithMessages(osiId: string, requestId: string) {

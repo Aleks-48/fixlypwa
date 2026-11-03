@@ -4,6 +4,7 @@ import { memberContext } from "@/lib/auth/context";
 import { hasRole } from "@/lib/auth/guards";
 import { createRequest, getOccupantBuilding, listRequests } from "@/lib/comms/service";
 import { UPLOAD_URL_RE } from "@/lib/uploads/service";
+import { canReadUpload } from "@/lib/uploads/private";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,9 @@ export async function POST(req: Request) {
   }
 
   // Дом жителя определяется по привязке к квартире, не берётся из ввода.
+  for (const url of parsed.data.photoUrls ?? []) {
+    if (!await canReadUpload(ctx.auth, url)) return Errors.forbidden("Файл недоступен");
+  }
   const occ = await getOccupantBuilding(ctx.osiId, ctx.auth.user.id);
   if (!occ?.apartment) {
     return Errors.validation("Вы не привязаны к квартире — обратитесь к председателю");

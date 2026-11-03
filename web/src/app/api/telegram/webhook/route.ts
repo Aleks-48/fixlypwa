@@ -1,6 +1,7 @@
 import { env } from "@/lib/env";
-import { ok, Errors } from "@/lib/http";
+import { ok, Errors, fail } from "@/lib/http";
 import { handleTelegramUpdate, type TelegramUpdate } from "@/lib/telegram";
+import { prisma } from "@/lib/db/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,13 +16,20 @@ export async function POST(req: Request) {
     return Errors.unauthorized();
   }
 
-  const update = (await req.json().catch(() => null)) as TelegramUpdate | null;
-  if (update) {
-    // Best-effort: сбой обработки не должен превращаться в ретраи от Telegram (200 всегда).
-    await handleTelegramUpdate(update).catch((err) => {
-      console.error("[telegram webhook] обработка апдейта упала:", err);
-    });
+  const update = (await req.json().catch(() => null)) as (TelegramUpdate & { update_id?: number }) | null;
+  if (!update || !Number.isSafeInteger(update.update_id) || update.update_id! < 0 || update.update_id! > 2147483647) return Errors.validation("Invalid update_id");
+  try {
+    await prisma.$transaction(async tx => {
+      const id = update.update_id!;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(260926, ${id}::integer)::text`;
+      if (await tx.telegramUpdateReceipt.findUnique({ where: { id } })) return;
+      await handleTelegramUpdate(update);
+      await tx.telegramUpdateReceipt.create({ data: { id } });
+    }, { maxWait: 5000, timeout: 40000 });
+    return ok({ ok: true });
+  } catch {
+    // ACCEPT-003: no acknowledgement on failure; Telegram retries. Never log bot secrets.
+    console.error("[telegram webhook] processing failed; update will be retried");
+    return fail("TELEGRAM_RETRY", "Temporary processing failure", 503);
   }
-
-  return ok({ ok: true });
 }

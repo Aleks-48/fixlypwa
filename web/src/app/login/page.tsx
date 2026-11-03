@@ -15,20 +15,23 @@ const BULLETS = [
 // Вход (REQ-001/005, auth-email.md). Дефолт — единая форма кода (телефон или email);
 // ?role=chairman → форма email+пароль (пароль сохраняется для председателей).
 // Макет: сплит-экран (синяя брендпанель на lg+) — auth-флоу прежний, только UI.
+import { LanguageToggle } from "@/app/app/_components/LanguageToggle";
+
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ role?: string }>;
 }) {
-  // Уже вошедших уводим в кабинет.
-  if (await getCurrentAuth()) redirect("/app");
-
   const { role } = await searchParams;
+  const destination = role === "master" ? "/master" : role === "resident" || role === "chairman" ? "/app" : "/cabinet";
+  // CABINET-002: preserve the selected destination for an existing session too.
+  if (await getCurrentAuth()) redirect(destination);
   const mode = role === "chairman" ? "chairman" : "code";
 
   return (
     <main className="relative flex min-h-dvh">
-      <div className="absolute right-4 top-4 z-10">
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
       {/* Брендпанель (desktop) */}
@@ -64,7 +67,7 @@ export default async function LoginPage({
             <Building2 aria-hidden size={28} />
           </span>
           <h1 className="m-0 text-2xl font-extrabold tracking-tight lg:text-3xl">
-            {mode === "chairman" ? "Вход по паролю" : "Вход"}
+            {mode === "chairman" ? "Вход по паролю" : role === "master" ? "Вход мастера" : "Вход"}
           </h1>
           <p className="mb-0 mt-1.5 text-[15px] text-muted-foreground">
             {mode === "chairman"
@@ -72,7 +75,7 @@ export default async function LoginPage({
               : "Введите телефон или email — пришлём код для входа."}
           </p>
 
-          <LoginForm mode={mode} />
+          <LoginForm mode={mode} redirectTo={destination} />
 
           {mode === "code" && aituConfigured() && (
             <a
@@ -104,7 +107,7 @@ export default async function LoginPage({
             )}
             <p className="m-0">
               Нет аккаунта?{" "}
-              <Link href="/register" className="font-semibold text-primary no-underline">
+              <Link href={role === "master" ? "/register?role=master" : "/register"} className="font-semibold text-primary no-underline">
                 Зарегистрироваться
               </Link>
             </p>

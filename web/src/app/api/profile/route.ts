@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentAuth } from "@/lib/auth/session";
-import { updateUserProfile, type UpdateProfileInput } from "@/lib/settings/service";
+import { updateUserProfile } from "@/lib/settings/service";
+import { z } from "zod";
 
 // GET /api/profile  — профиль текущего пользователя (REQ-046)
 export async function GET() {
@@ -14,8 +15,7 @@ export async function GET() {
       fullName: user.fullName,
       phone: user.phone,
       email: user.email,
-      // language field will exist after migration
-      language: (user as Record<string, unknown>).language ?? "ru",
+      language: user.language,
     },
   });
 }
@@ -25,11 +25,18 @@ export async function PATCH(req: Request) {
   const auth = await getCurrentAuth();
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = (await req.json()) as UpdateProfileInput;
+  const parsed = z.object({
+    fullName: z.string().trim().max(200).optional(),
+    name: z.string().trim().max(200).optional(),
+    email: z.string().trim().email().nullable().optional(),
+    language: z.enum(["ru", "kk", "en"]).optional(),
+  }).safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Некорректные данные профиля" }, { status: 400 });
+  const body = parsed.data;
 
   // Валидация языка
-  if (body.language && !["ru", "kk"].includes(body.language)) {
-    return NextResponse.json({ error: "Invalid language. Use 'ru' or 'kk'." }, { status: 400 });
+  if (body.language && !["ru", "kk", "en"].includes(body.language)) {
+    return NextResponse.json({ error: "Invalid language. Use 'ru', 'kk', or 'en'." }, { status: 400 });
   }
 
   const updated = await updateUserProfile(auth.user.id, body);

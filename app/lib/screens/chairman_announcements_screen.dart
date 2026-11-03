@@ -5,6 +5,7 @@ import 'package:fixly_app/theme/app_theme.dart';
 import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/core/announcements_repository.dart';
 import 'package:fixly_app/core/osi_repository.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // Объявления дома — председатель (REQ-143). Список + создание + удаление.
 // MVP: берём ПЕРВЫЙ дом ОСИ (Q-005 — большинство ОСИ управляют одним домом).
@@ -114,6 +115,69 @@ class _ChairmanAnnouncementsScreenState
     }
   }
 
+  Future<void> _shareAnnouncement(Announcement a) async {
+    final text = Uri.encodeComponent(
+      '📢 *Уведомление от председателя ОСИ*\n\n'
+      '*${a.title}*\n\n'
+      '${a.body}\n\n'
+      'Подробнее в приложении Fixly.'
+    );
+    final c = AppColors.of(context);
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: c.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(AppDimens.spaceLg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Рассылка объявления',
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: AppTypography.sectionTitle,
+                fontWeight: AppTypography.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Выберите чат для отправки готового текста жителям:',
+              style: TextStyle(color: c.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: AppDimens.spaceMd),
+            ListTile(
+              leading: const Icon(LucideIcons.messageSquare, color: Color(0xFF25D366)),
+              title: const Text('Поделиться в WhatsApp чат'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final uri = Uri.parse('https://api.whatsapp.com/send?text=$text');
+                if (await canLaunchUrl(uri)) {
+                  launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.send, color: Color(0xFF229ED9)),
+              title: const Text('Поделиться в Telegram чат'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final uri = Uri.parse('https://t.me/share/url?url=&text=$text');
+                if (await canLaunchUrl(uri)) {
+                  launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
@@ -136,6 +200,7 @@ class _ChairmanAnnouncementsScreenState
         iconTheme: IconThemeData(color: c.textPrimary),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'create_announcement_fab',
         onPressed: _openCreate,
         backgroundColor: c.primary,
         child: const Icon(Icons.add, color: Colors.white),
@@ -231,9 +296,24 @@ class _ChairmanAnnouncementsScreenState
                                       onSelected: (val) {
                                         if (val == 'delete') {
                                           _deleteAnnouncement(a.id);
+                                        } else if (val == 'share') {
+                                          _shareAnnouncement(a);
                                         }
                                       },
-                                      itemBuilder: (context) => [
+                                      itemBuilder: (_) => [
+                                        PopupMenuItem(
+                                          value: 'share',
+                                          child: Row(
+                                            children: [
+                                              Icon(LucideIcons.share2,
+                                                  size: 16, color: c.textPrimary),
+                                              const SizedBox(width: 8),
+                                              Text('Разослать',
+                                                  style: TextStyle(
+                                                      color: c.textPrimary)),
+                                            ],
+                                          ),
+                                        ),
                                         PopupMenuItem(
                                           value: 'delete',
                                           child: Row(

@@ -4,6 +4,7 @@ import { ok, fail, Errors, clientIp } from "@/lib/http";
 import { parseIdentifier } from "@/lib/identifier";
 import { checkOtpRequestAllowed } from "@/lib/auth/rateLimit";
 import { requestOtp } from "@/lib/auth/otp";
+import { allowDevOtpEcho, allowTestOtpEcho } from "@/lib/auth/devOtp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +56,8 @@ export async function POST(req: Request) {
 
   let result;
   try {
-    result = await requestOtp(identifier, ip);
+    const testEcho = allowTestOtpEcho(req, identifier);
+    result = await requestOtp(identifier, ip, allowDevOtpEcho(req) || testEcho, testEcho);
   } catch (err) {
     // Транспорт (SMTP/SMS/Telegram) упал на стороне провайдера (напр. Resend в sandbox-режиме
     // без домена отклоняет письма на чужие адреса) — не даём голому 500 дойти до клиента,
@@ -72,10 +74,10 @@ export async function POST(req: Request) {
   if (result.status === "needs_telegram_link") {
     return ok({ needsTelegramLink: true, telegramBotUsername: result.botUsername });
   }
-  // devCode присутствует только при console-провайдере канала + OTP_DEV_ECHO=1 (dev/test).
+  // TECH-015 / TEST-OTP-002: local dev or explicitly designated fake test phones.
   return ok({
     sent: true,
     channel: identifier.kind,
     ...(result.devCode ? { devCode: result.devCode } : {}),
-  });
+  }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -1,93 +1,44 @@
-import { NextResponse } from "next/server";
+import { chairmanContext, memberContext } from "@/lib/auth/context";
+import { hasRole } from "@/lib/auth/guards";
+import { getOccupantBuilding } from "@/lib/comms/service";
+import { getBuilding, listBuildings } from "@/lib/onboarding/service";
+import { Errors, ok } from "@/lib/http";
+import { createPoll, listPolls } from "@/lib/polls/service";
 import { z } from "zod";
-import { ok, Errors } from "@/lib/http";
-import { chairmanContext } from "@/lib/auth/context";
-import { prisma } from "@/lib/db/prisma";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
 const Body = z.object({
-  buildingId: z.string().uuid("Некорректный UUID дома"),
-  
-  // Принимаем и title, и question для обратной совместимости с фронтом
-  title: z.string().min(3, "Укажите название (минимум 3 символа)").max(300),
-  
-  description: z.string().optional(),
-  type: z.enum(["INFORMATIONAL", "LEGALLY_BINDING"]).default("INFORMATIONAL"),
-  quorumType: z.enum(["BY_AREA", "BY_APARTMENT"]).default("BY_AREA"),
-  
-  // coerce автоматически скомпилирует строку "50" в число 50
-  quorumThreshold: z.coerce.number().default(50.0),
-  
-  // Приводим пустые строки к undefined, чтобы валидация давала точный ответ
-  startDate: z.preprocess(
-    (val) => (val === "" || val === null ? undefined : val),
-    z.coerce.date({ invalid_type_error: "Укажите корректную дату начала" })
-  ),
-  endDate: z.preprocess(
-    (val) => (val === "" || val === null ? undefined : val),
-    z.coerce.date({ invalid_type_error: "Укажите корректную дату окончания" })
-  ),
-  
-  options: z
-    .array(z.string().trim().min(1, "Вариант не может быть пустым").max(100))
-    .min(2, "Минимум 2 варианта")
-    .max(10),
-});
-
-// POST /api/polls — создание опроса (поддерживает и lite, и юридически значимые)
+  buildingId: z.string().uuid(),
+  question: z.string().trim().min(3).max(300).optional(),
+  title: z.string().trim().min(3).max(300).optional(),
+  type: z.literal("INFORMATIONAL").optional(),
+  deadline: z.coerce.date().nullish(), endDate: z.coerce.date().nullish(),
+  options: z.array(z.string().trim().min(1).max(100)).min(2).max(10),
+}).refine(data => !!(data.question || data.title), "Укажите вопрос");
+// ACCEPT-005: ordinary polls; legal voting requires ADR-0007 integration.
 export async function POST(req: Request) {
   const ctx = await chairmanContext();
   if (!ctx.ok) return ctx.response;
-
   const parsed = Body.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) {
-    return Errors.validation(parsed.error.issues[0]?.message ?? "Некорректные данные");
-  }
-
-  const data = parsed.data;
-
-  // Получаем параметры дома для фиксации площади на момент создания (нужно для кворума)
-  const building = await prisma.building.findUnique({
-    where: { id: data.buildingId },
-    include: { apartments: true },
-  });
-
-  if (!building) return Errors.notFound("Дом");
-
-  // В схеме Prisma площадь квартиры хранится в поле `area` (или `squareMeters` в альтернативных сущностях)
-  const totalBuildingArea = building.apartments.reduce(
-    (acc, apt: any) => acc + (Number(apt.area || apt.squareMeters) || 0),
-    0
-  );
-  const totalApartments = building.apartments.length;
-
-  const poll = await prisma.poll.create({
-    data: {
-      osiId: ctx.osiId,
-      buildingId: data.buildingId,
-      title: data.title,
-      question: data.title, // На случай, если в схеме используется поле question
-      description: data.description,
-      type: data.type,
-      quorumType: data.quorumType,
-      quorumThreshold: data.quorumThreshold,
-      startDate: data.startDate,
-      endDate: data.endDate,
-      deadline: data.endDate, // Синхронизируем endDate/deadline для совместимости моделей
-      totalBuildingArea,
-      totalApartments,
-      options: {
-        create: data.options.map((optText) => ({
-          osiId: ctx.osiId,
-          label: optText, // Обязательное поле label в PollOption
-          text: optText,  // Поле text для обратной совместимости
-        })),
-      },
-    } as any,
-    include: { options: true },
-  });
-
+  if (!parsed.success) return Errors.validation("Укажите вопрос, варианты и дату обычного опроса. Юридические голосования пока не подключены.");
+  if (!await getBuilding(ctx.osiId, parsed.data.buildingId)) return Errors.notFound("Дом");
+  const deadline = parsed.data.deadline ?? parsed.data.endDate;
+  if (deadline && deadline.getTime() <= Date.now()) return Errors.validation("Дата завершения должна быть в будущем");
+  const poll = await createPoll(ctx.osiId, { ...parsed.data, question: parsed.data.question ?? parsed.data.title!, deadline });
   return ok({ poll }, { status: 201 });
+}
+export async function GET(req: Request) {
+  const ctx = await memberContext();
+  if (!ctx.ok) return ctx.response;
+  let buildingId = new URL(req.url).searchParams.get("buildingId");
+  if (hasRole(ctx.auth, ctx.osiId, "CHAIRMAN", "SUPERADMIN")) {
+    buildingId ??= (await listBuildings(ctx.osiId))[0]?.id ?? null;
+  } else {
+    const occupant = await getOccupantBuilding(ctx.osiId, ctx.auth.user.id);
+    const ownBuilding = occupant?.apartment.buildingId;
+    if (buildingId && buildingId !== ownBuilding) return Errors.forbidden();
+    buildingId = ownBuilding ?? null;
+  }
+  if (!buildingId) return ok({ polls: [] });
+  return ok({ polls: await listPolls(ctx.osiId, buildingId, ctx.auth.user.id) });
 }

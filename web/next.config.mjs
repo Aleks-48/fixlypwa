@@ -14,6 +14,9 @@ const withPWA = withPWAInit({
   customWorkerSrc: "service-worker",
   disable: process.env.NODE_ENV === "development",
   register: true,
+  cacheStartUrl: false,
+  dynamicStartUrl: false,
+  publicExcludes: ["!uploads/**/*"],
   // ВЫКЛЮЧЕНО (2026-07-04): cacheOnFrontendNav/aggressiveFrontEndNavCaching кэшировали
   // RSC-ответы страниц → router.refresh() после мутаций (добавить дом, отметить прочитанным)
   // отдавал устаревшие данные из SW-кэша (pages-rsc). Все страницы кабинета — force-dynamic
@@ -28,21 +31,23 @@ const withPWA = withPWAInit({
   // стримящийся RSC-ответ (после появления loading.tsx) и подвешивал поток →
   // router.refresh() обрывался (net::ERR_ABORTED), UI не видел свежие данные после мутаций.
   // Кэшировать персональные force-dynamic ответы и не нужно: офлайн закрывает /~offline.
-  extendDefaultRuntimeCaching: true,
+  extendDefaultRuntimeCaching: false,
   workboxOptions: {
     disableDevLogs: true,
     runtimeCaching: [
       {
-        urlPattern: ({ sameOrigin, request }) =>
-          sameOrigin && request.headers.get("RSC") === "1",
-        handler: "NetworkOnly",
+        // HANDOFF-003: only immutable application assets may enter runtime cache.
+        urlPattern: ({ sameOrigin, url }) => sameOrigin &&
+          (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/")),
+        handler: "CacheFirst",
+        options: { cacheName: "fixly-static-v2", expiration: { maxEntries: 150, maxAgeSeconds: 30 * 24 * 60 * 60 } },
       },
       {
         // SSE-поток (срез 24, /api/events) — бесконечный ответ. Дефолтный набор кэширования
         // (extendDefaultRuntimeCaching) заворачивает /api/* в NetworkFirst, который читает
         // ответ целиком для кэша — на потоке без конца это тот же зависающий clone(), что уже
         // ловили на стримящемся RSC (комментарий выше). Держим вне SW-кэша явно.
-        urlPattern: ({ sameOrigin, url }) => sameOrigin && url.pathname === "/api/events",
+        urlPattern: ({ url }) => url.protocol === "http:" || url.protocol === "https:",
         handler: "NetworkOnly",
       },
     ],
@@ -51,20 +56,25 @@ const withPWA = withPWAInit({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // Задаём папку web как корень проекта, чтобы Next.js не поднимался на уровень выше из-за верхнего package-lock.json
   outputFileTracingRoot: __dirname,
+  // Uploaded documents are runtime data and must never be copied into a release bundle.
+  outputFileTracingExcludes: {
+    "*": ["./storage/**/*", "./public/uploads/**/*", "./technical-*.log", "./technical-*.json"],
+  },
 
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
 
-  // Игнорируем ошибки линтера и типов при сборке
+  // TypeScript errors block release builds (TECH-006). Lint is a separate check.
   eslint: {
     ignoreDuringBuilds: true,
   },
   typescript: {
     tsconfigPath: "tsconfig.build.json",
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
 
   allowedDevOrigins: [

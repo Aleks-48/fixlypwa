@@ -1,16 +1,30 @@
+"use server";
+
+import { chairmanContext } from "@/lib/auth/context";
+import { forTenant } from "@/lib/db/tenant";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-export const createPollSchema = z.object({
+const _createPollSchema = z.object({
   question: z.string().min(1, "Введите вопрос"),
   options: z.array(z.string().min(1, "Заполните вариант")).min(2, "Минимум 2 варианта"),
-  
-  // 1. Делаем необязательным или подставляем дефолт, если поля нет в UI
-  buildingId: z.string().optional(), 
-  
-  // 2. Если требуется дата, а инпута нет — генерируем дефолт (например, +7 дней)
-  endDate: z.string().optional().default(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 7);
-    return d.toISOString();
-  }),
+  buildingId: z.string().optional(),
+  endDate: z.string().optional(),
 });
+
+export async function deleteLegalVotingAction(pollId: string, buildingId: string) {
+  const ctx = await chairmanContext();
+  if (!ctx.ok) return { success: false, error: "Недостаточно прав" };
+
+  try {
+    await forTenant(ctx.osiId, async (tx) => {
+      await tx.poll.delete({ where: { id: pollId } });
+    });
+    revalidatePath(`/app/buildings/${buildingId}/legal-voting`);
+    return { success: true };
+  } catch (caughtError) {
+const err = caughtError instanceof Error ? caughtError : new Error(String(caughtError));
+
+    return { success: false, error: err?.message ?? "Ошибка удаления" };
+  }
+}

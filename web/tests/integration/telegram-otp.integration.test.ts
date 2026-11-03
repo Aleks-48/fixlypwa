@@ -68,7 +68,11 @@ describe("Telegram-канал OTP для телефона (REQ-009)", () => {
     // Пользователь жмёт «Поделиться номером» в боте — тот же путь, что реальный вебхук
     // (см. /api/telegram/webhook), phone передаём БЕЗ "+", как реально шлёт Telegram.
     await handleTelegramUpdate({
-      message: { chat: { id: 777 }, contact: { phone_number: phone.replace("+", "") } },
+      message: {
+        chat: { id: 777, type: "private" },
+        from: { id: 777 },
+        contact: { phone_number: phone.replace("+", ""), user_id: 777 },
+      },
     });
 
     const after = await requestOtp(identifier, "127.0.0.1");

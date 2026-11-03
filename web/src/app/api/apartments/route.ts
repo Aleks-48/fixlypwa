@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ok, Errors } from "@/lib/http";
 import { chairmanContext } from "@/lib/auth/context";
-import { listApartments, createApartment, OnboardingError } from "@/lib/onboarding/service";
+import { listApartmentsWithOccupants, createApartment, OnboardingError } from "@/lib/onboarding/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   const buildingId = new URL(req.url).searchParams.get("buildingId");
   if (!buildingId) return Errors.validation("Укажите buildingId");
 
-  return ok({ apartments: await listApartments(ctx.osiId, buildingId) });
+  return ok({ apartments: await listApartmentsWithOccupants(ctx.osiId, buildingId) });
 }
 
 // POST /api/apartments — добавить квартиру (REQ-011).

@@ -4,6 +4,7 @@ import { Megaphone, Wrench, Wallet, FileText, ListTodo, Info } from "lucide-reac
 import { getCurrentAuth } from "@/lib/auth/session";
 import { activeChairmanOsi } from "@/lib/auth/guards";
 import { getBuilding, listApartmentsWithOccupants } from "@/lib/onboarding/service";
+import { getTranslation } from "@/lib/i18n/server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AddApartmentForm } from "../../_components/AddApartmentForm";
@@ -13,15 +14,6 @@ import { PageBody, PageHeader } from "../../_components/PageHeader";
 
 export const dynamic = "force-dynamic";
 
-const NAV = [
-  { href: "announcements", label: "Объявления", icon: Megaphone, testid: "nav-announcements" },
-  { href: "requests", label: "Заявки", icon: Wrench, testid: "nav-requests" },
-  { href: "finance", label: "Финансы", icon: Wallet, testid: "nav-finance" },
-  { href: "reports", label: "Отчёты", icon: FileText, testid: "nav-reports" },
-  { href: "polls", label: "Опросы", icon: ListTodo, testid: "nav-polls" },
-  { href: "info", label: "Инфо", icon: Info, testid: "nav-info" },
-] as const;
-
 // Управление домом: квартиры + привязка жителей (REQ-011/013). Данные читаются через forTenant
 // (RLS): чужой дом вернёт null → 404.
 export default async function BuildingPage({
@@ -29,6 +21,7 @@ export default async function BuildingPage({
 }: {
   params: Promise<{ buildingId: string }>;
 }) {
+  const { t } = await getTranslation();
   const auth = await getCurrentAuth();
   if (!auth) redirect("/login");
   const osiId = activeChairmanOsi(auth);
@@ -40,20 +33,29 @@ export default async function BuildingPage({
 
   const apartments = await listApartmentsWithOccupants(osiId, buildingId);
 
+  const NAV = [
+    { href: "announcements", labelKey: "nav_announcements", icon: Megaphone, testid: "nav-announcements" },
+    { href: "requests", labelKey: "nav_requests_chairman", icon: Wrench, testid: "nav-requests" },
+    { href: "finance", labelKey: "nav_payments", icon: Wallet, testid: "nav-finance" },
+    { href: "reports", labelKey: "nav_reports", icon: FileText, testid: "nav-reports" },
+    { href: "polls", labelKey: "nav_polls", icon: ListTodo, testid: "nav-polls" },
+    { href: "info", labelKey: "nav_info", icon: Info, testid: "nav-info" },
+  ] as const;
+
   return (
     <>
       <PageHeader
         title={building.address}
-        subtitle={`${apartments.length} квартир`}
-        back={{ href: "/app", label: "К домам" }}
+        subtitle={`${apartments.length} ${t("label_apartments")}`}
+        back={{ href: "/app", label: t("label_back_to_buildings") }}
       />
       <PageBody wide>
       <nav className="mb-6 flex flex-wrap gap-2">
-        {NAV.map(({ href, label, icon: Icon, testid }) => (
+        {NAV.map(({ href, labelKey, icon: Icon, testid }) => (
           <Button key={href} asChild variant="outline" size="sm" className="h-9 rounded-full px-3.5">
             <Link href={`/app/buildings/${building.id}/${href}`} data-testid={testid}>
               <Icon aria-hidden size={14} />
-              {label}
+              {t(labelKey)}
             </Link>
           </Button>
         ))}
@@ -61,9 +63,9 @@ export default async function BuildingPage({
 
       <section className="grid gap-6">
         <div className="grid gap-3">
-          <h2 className="m-0 text-base font-semibold">Квартиры ({apartments.length})</h2>
+          <h2 className="m-0 text-base font-semibold">{t("label_apartments")} ({apartments.length})</h2>
           {apartments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Квартир пока нет. Добавьте первую ниже.</p>
+            <p className="text-sm text-muted-foreground">{t("label_no_apartments")}</p>
           ) : (
             <ul className="m-0 grid list-none gap-2.5 p-0">
               {apartments.map((apt) => (
@@ -71,7 +73,7 @@ export default async function BuildingPage({
                   <Card className="rounded-2xl shadow-sm">
                     <CardContent className="pt-6">
                       <div className="flex items-baseline justify-between">
-                        <strong className="text-sm font-semibold">Кв. {apt.number}</strong>
+                        <strong className="text-sm font-semibold">{t("label_apt_short")} {apt.number}</strong>
                         {apt.area != null && (
                           <span className="text-sm text-muted-foreground">{String(apt.area)} м²</span>
                         )}
@@ -101,7 +103,7 @@ export default async function BuildingPage({
         </div>
 
         <div className="grid gap-3">
-          <h2 className="m-0 text-base font-semibold">Добавить квартиру</h2>
+          <h2 className="m-0 text-base font-semibold">{t("label_add_apartment")}</h2>
           <Card className="rounded-2xl shadow-sm">
             <CardContent className="pt-6">
               <AddApartmentForm buildingId={building.id} />
@@ -110,7 +112,7 @@ export default async function BuildingPage({
         </div>
 
         <div className="grid gap-3">
-          <h2 className="m-0 text-base font-semibold">Импортировать реестр помещений</h2>
+          <h2 className="m-0 text-base font-semibold">{t("label_import_apartments")}</h2>
           <Card className="rounded-2xl shadow-sm">
             <CardContent className="pt-6">
               <ImportApartmentsForm buildingId={building.id} />

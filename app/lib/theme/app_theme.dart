@@ -201,7 +201,7 @@ class AppTheme {
                 fontSize: AppTypography.cardTitle,
                 fontWeight: AppTypography.semibold,
                 color: c.textPrimary),
-            labelLarge: TextStyle(
+            labelLarge: const TextStyle(
                 fontSize: AppTypography.button, fontWeight: AppTypography.bold),
           ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
@@ -219,7 +219,7 @@ class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: c.surface,
-        indicatorColor: c.primary.withOpacity(0.15),
+        indicatorColor: c.primary.withValues(alpha: 0.15),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return TextStyle(
@@ -254,7 +254,7 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: c.primary,
-          side: BorderSide(color: c.primary.withOpacity(0.6), width: 1.5),
+          side: BorderSide(color: c.primary.withValues(alpha: 0.6), width: 1.5),
           minimumSize: const Size(0, AppDimens.primaryTapTarget),
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
           textStyle: const TextStyle(
@@ -299,9 +299,9 @@ class AppTheme {
             color: c.textPrimary),
         contentTextStyle: TextStyle(fontSize: AppTypography.body, color: c.textSecondary),
       ),
-      bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: c.card,
-        shape: const RoundedRectangleBorder(
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),
@@ -311,7 +311,7 @@ class AppTheme {
         ),
         trackColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? c.primary.withOpacity(0.4)
+              ? c.primary.withValues(alpha: 0.4)
               : null,
         ),
       ),
@@ -379,7 +379,7 @@ class AppButton extends StatelessWidget {
             onPressed: isLoading ? null : onPressed,
             style: OutlinedButton.styleFrom(
               foregroundColor: btnColor,
-              side: BorderSide(color: btnColor.withOpacity(0.6), width: 1.5),
+              side: BorderSide(color: btnColor.withValues(alpha: 0.6), width: 1.5),
               minimumSize: const Size(0, AppDimens.primaryTapTarget),
             ),
             child: child,
@@ -562,9 +562,9 @@ class StatusBadge extends StatelessWidget {
         vertical: compact ? 5 : 7,
       ),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.14),
+        color: color.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.5)),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(
         _label,
@@ -629,7 +629,7 @@ class AppShimmer extends StatelessWidget {
     );
   }
 
-static Widget cardListTile(BuildContext context) {
+  static Widget cardListTile(BuildContext context) {
     final colors = AppColors.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -643,20 +643,19 @@ static Widget cardListTile(BuildContext context) {
         children: [
           AppShimmer.circular(size: 54),
           const SizedBox(width: 16),
-          Expanded(
+          const Expanded(
             child: Column(
-              // Вот здесь была лишняя строка, теперь всё чисто:
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const AppShimmer(width: 140, height: 16, borderRadius: 6),
-                const SizedBox(height: 8),
-                const AppShimmer(width: 80, height: 12, borderRadius: 4),
-                const SizedBox(height: 8),
+                AppShimmer(width: 140, height: 16, borderRadius: 6),
+                SizedBox(height: 8),
+                AppShimmer(width: 80, height: 12, borderRadius: 4),
+                SizedBox(height: 8),
                 Row(
                   children: [
-                    const AppShimmer(width: 40, height: 10, borderRadius: 4),
-                    const SizedBox(width: 8),
-                    const AppShimmer(width: 60, height: 10, borderRadius: 4),
+                    AppShimmer(width: 40, height: 10, borderRadius: 4),
+                    SizedBox(width: 8),
+                    AppShimmer(width: 60, height: 10, borderRadius: 4),
                   ],
                 ),
               ],
@@ -685,15 +684,15 @@ static Widget cardListTile(BuildContext context) {
             children: [
               AppShimmer.circular(size: 36),
               const SizedBox(width: 12),
-              Expanded(
+              const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const AppShimmer(width: double.infinity, height: 14, borderRadius: 6),
-                    const SizedBox(height: 8),
-                    const AppShimmer(width: 200, height: 12, borderRadius: 4),
-                    const SizedBox(height: 6),
-                    const AppShimmer(width: 160, height: 12, borderRadius: 4),
+                    AppShimmer(width: double.infinity, height: 14, borderRadius: 6),
+                    SizedBox(height: 8),
+                    AppShimmer(width: 200, height: 12, borderRadius: 4),
+                    SizedBox(height: 6),
+                    AppShimmer(width: 160, height: 12, borderRadius: 4),
                   ],
                 ),
               ),

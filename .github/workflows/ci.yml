@@ -60,6 +60,7 @@ jobs:
       # Чистая БД → миграции → пароли ролей.
       - run: npm run prisma:deploy
       - run: npm run db:bootstrap
+      - run: npx tsx scripts/check-schema.ts
 
       # RLS-изоляция и онбординг на реальной БД (DoD §5.3).
       - run: npm run test:integration

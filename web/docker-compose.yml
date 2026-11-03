@@ -38,7 +38,7 @@ services:
       target: migrator
     environment:
       DIRECT_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      DATABASE_URL: postgresql://app_login:${APP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
       APP_SUPERADMIN_PASSWORD: ${APP_SUPERADMIN_PASSWORD}
     depends_on:
@@ -117,7 +117,7 @@ services:
     volumes:
       # Фото заявок (marketplace.md M3) — локальный volume (data-residency РК, Q-054),
       # переживает пересборку/передеплой образа. Требует --chown в Dockerfile (см. комментарий там).
-      - uploads:/app/public/uploads
+      - uploads:/app/storage/uploads
     expose:
       - "3000"
     healthcheck:

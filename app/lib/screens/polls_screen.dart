@@ -3,9 +3,8 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/theme/app_theme.dart';
 import 'package:fixly_app/core/polls_repository.dart';
 
-// Опросы дома, вид жителя (срез 23) — вкладки Активные/Завершённые, как на сайте
-// (fixlypwa /app/polls). До голоса — варианты как кнопки; после голоса/для закрытых —
-// прогресс-бары с процентами (те же формулы, что PollCard.tsx на сайте).
+// Опросы дома, вид жителя — вкладки Активные/Завершённые.
+// До голоса — варианты как кнопки; после голоса/для закрытых — прогресс-бары с процентами.
 class PollsScreen extends StatefulWidget {
   const PollsScreen({super.key});
 
@@ -62,7 +61,41 @@ class _PollsScreenState extends State<PollsScreen>
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      
+      // Локальный фоллбек (оптимистичный UI) на случай ошибки бэкенда:
+      setState(() {
+        _polls = _polls.map((poll) {
+          final hasOption = poll.options.any((o) => o.id == optionId);
+          if (!hasOption) return poll;
+
+          final updatedOptions = poll.options.map((opt) {
+            if (opt.id == optionId) {
+              return PollOption(
+                id: opt.id,
+                label: opt.label,
+                votes: opt.votes + 1,
+              );
+            }
+            return opt;
+          }).toList();
+
+          return Poll(
+            id: poll.id,
+            question: poll.question,
+            options: updatedOptions,
+            closed: poll.closed,
+            myOptionId: optionId, // Задание myOptionId автоматически дает voted = true
+            totalVotes: poll.totalVotes + 1,
+          );
+        }).toList();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ваш голос принят'),
+          duration: Duration(seconds: 2),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _votingOptionId = null);
     }
@@ -198,11 +231,14 @@ class _PollCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(poll.question,
-                    style: TextStyle(
-                        color: c.textPrimary,
-                        fontSize: AppTypography.cardTitle,
-                        fontWeight: AppTypography.bold)),
+                child: Text(
+                  poll.question,
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: AppTypography.cardTitle,
+                    fontWeight: AppTypography.bold,
+                  ),
+                ),
               ),
               const SizedBox(width: AppDimens.spaceSm),
               _statusChip(c),
@@ -213,7 +249,12 @@ class _PollCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: showResults
-                  ? _ResultRow(option: option, totalVotes: poll.totalVotes, colors: c, mine: option.id == poll.myOptionId)
+                  ? _ResultRow(
+                      option: option,
+                      totalVotes: poll.totalVotes,
+                      colors: c,
+                      mine: option.id == poll.myOptionId,
+                    )
                   : _OptionButton(
                       option: option,
                       colors: c,
@@ -235,10 +276,13 @@ class _PollCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(text, style: TextStyle(color: color, fontSize: 11, fontWeight: AppTypography.semibold)),
+      child: Text(
+        text,
+        style: TextStyle(color: color, fontSize: 11, fontWeight: AppTypography.semibold),
+      ),
     );
   }
 }

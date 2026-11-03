@@ -83,6 +83,7 @@ export function vote(osiId: string, optionId: string, userId: string): Promise<V
     if (!option) return "not_found";
     if (option.poll.deadline && option.poll.deadline.getTime() < Date.now()) return "closed";
 
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${option.poll.id + ":" + userId}, 0))::text`;
     await tx.vote.deleteMany({
       where: { userId, option: { pollId: option.poll.id } },
     });

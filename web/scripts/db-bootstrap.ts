@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 
 // Заменяет плейсхолдер-пароли ролей БД (prisma/migrations/..._rls_policies создаёт app_login и

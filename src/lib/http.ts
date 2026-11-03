@@ -39,5 +39,5 @@ export const Errors = {
   validation: (message: string) => fail("VALIDATION", message, 422),
   rateLimited: (message = "Слишком много запросов, попробуйте позже") =>
     fail("RATE_LIMITED", message, 429),
-  internal: () => fail("INTERNAL", "Внутренняя ошибка", 500),
+  internal: (p0: string) => fail("INTERNAL", "Внутренняя ошибка", 500),
 } as const;

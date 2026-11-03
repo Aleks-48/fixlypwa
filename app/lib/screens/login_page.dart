@@ -7,6 +7,8 @@ import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/core/auth_repository.dart';
 import 'package:fixly_app/screens/home_router.dart';
 import 'package:fixly_app/screens/register_screen.dart';
+import 'package:fixly_app/screens/legal_docs_sheet.dart';
+import 'package:fixly_app/screens/video_instructions_sheet.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 // ============================================================
@@ -24,16 +26,20 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
+enum _AuthMode { code, password }
 enum _Step { identifier, code }
 
 class _LoginPageState extends State<LoginPage>
     with SingleTickerProviderStateMixin {
   final _identifierCtrl = TextEditingController();
   final _codeCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
+  _AuthMode _authMode = _AuthMode.code; // code (жители/мастера) или password (председатели)
   _Step _step = _Step.identifier;
   bool _isLoading = false;
+  bool _obscurePassword = true;
   String? _errorMessage;
   String _identifier = '';
   String? _devCode; // приходит ТОЛЬКО в dev (OTP_DEV_ECHO=1) — подсказка для локального теста
@@ -77,7 +83,36 @@ class _LoginPageState extends State<LoginPage>
     _animCtrl.dispose();
     _identifierCtrl.dispose();
     _codeCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
+  }
+
+  // ── ВХОД ПРЕДСЕДАТЕЛЯ ПО ПАРОЛЮ ─────────────────────────────
+  Future<void> _loginWithPassword() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final email = _identifierCtrl.text.trim();
+      final password = _passwordCtrl.text;
+      final user = await AuthRepository.instance.loginWithPassword(email, password);
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => HomeRouter(user: user)),
+          (_) => false,
+        );
+      }
+    } on ApiException catch (e) {
+      _showError(_localizeError(e));
+    } catch (_) {
+      _showError(appLanguage.value == 'ru' ? 'Ошибка подключения' : 'Байланыс қатесі');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   // ── ШАГ 1: запросить код ──────────────────────────────────
@@ -184,19 +219,26 @@ class _LoginPageState extends State<LoginPage>
                   children: [
                     const SizedBox(height: 48),
                     _animated(0, child: _logo(c)),
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 32),
                     _animated(1, child: _title(lang, c)),
-                    const SizedBox(height: 40),
-                    if (_step == _Step.identifier) ..._identifierStep(lang, c),
-                    if (_step == _Step.code) ..._codeStep(lang, c),
+                    const SizedBox(height: 24),
+                    _animated(1, child: _authModeToggle(lang, c)),
+                    const SizedBox(height: 24),
+                    if (_authMode == _AuthMode.password) ..._passwordStep(lang, c),
+                    if (_authMode == _AuthMode.code && _step == _Step.identifier) ..._identifierStep(lang, c),
+                    if (_authMode == _AuthMode.code && _step == _Step.code) ..._codeStep(lang, c),
                     if (_errorMessage != null) ...[
                       const SizedBox(height: 12),
                       _errorBanner(c),
                     ],
                     const SizedBox(height: 20),
                     _animated(4, child: _submitButton(lang, c)),
-                    const SizedBox(height: 36),
-                    if (_step == _Step.identifier) _animated(4, child: _registerLink(lang, c)),
+                    const SizedBox(height: 8),
+                    if (_step == _Step.identifier || _authMode == _AuthMode.password) _animated(4, child: _videoInstructionsLink(lang, c)),
+                    const SizedBox(height: 8),
+                    if (_step == _Step.identifier || _authMode == _AuthMode.password) _animated(4, child: _legalConsent(lang, c)),
+                    const SizedBox(height: 24),
+                    if (_step == _Step.identifier || _authMode == _AuthMode.password) _animated(4, child: _registerLink(lang, c)),
                     const SizedBox(height: 32),
                   ],
                 ),
@@ -241,15 +283,15 @@ class _LoginPageState extends State<LoginPage>
 
   Widget _title(String lang, AppColors c) {
     final subtitle = _step == _Step.identifier
-        ? (lang == 'ru' ? 'Войдите в свой аккаунт' : 'Есептік жазбаңызға кіріңіз')
-        : (lang == 'ru'
-            ? 'Код отправлен на $_identifier'
-            : '$_identifier мекенжайына код жіберілді');
+        ? (lang == 'en' ? 'Log in to your account' : (lang == 'kk' ? 'Есептік жазбаңызға кіріңіз' : 'Войдите в свой аккаунт'))
+        : (lang == 'en'
+            ? 'Verification code sent to $_identifier'
+            : (lang == 'kk' ? '$_identifier мекенжайына код жіберілді' : 'Код отправлен на $_identifier'));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          lang == 'ru' ? 'Добро\nпожаловать!' : 'Қош\nкелдіңіз!',
+          lang == 'en' ? 'Welcome\nback!' : (lang == 'kk' ? 'Қош\nкелдіңіз!' : 'Добро\nпожаловать!'),
           style: TextStyle(
             color: c.textPrimary,
             fontSize: 38,
@@ -271,23 +313,21 @@ class _LoginPageState extends State<LoginPage>
         child: _buildTextField(
           c: c,
           controller: _identifierCtrl,
-          label: lang == 'ru' ? 'Телефон или email' : 'Телефон немесе email',
+          label: lang == 'en' ? 'Phone or email' : (lang == 'kk' ? 'Телефон немесе email' : 'Телефон или email'),
           hint: '+7 7XX XXX XX XX / email@example.com',
           icon: LucideIcons.user,
           keyboard: TextInputType.emailAddress,
           validator: (v) {
             final s = v?.trim() ?? '';
             if (s.isEmpty) {
-              return lang == 'ru' ? 'Укажите телефон или email' : 'Телефон/email енгізіңіз';
+              return lang == 'en' ? 'Enter phone or email' : (lang == 'kk' ? 'Телефон/email енгізіңіз' : 'Укажите телефон или email');
             }
-            // Быстрая проверка формы до похода в сеть (сервер всё равно валидирует через
-            // parseIdentifier): email — есть @ и точка после неё; телефон — 10+ цифр.
             final looksEmail = s.contains('@') && s.split('@').last.contains('.');
             final looksPhone = s.replaceAll(RegExp(r'\D'), '').length >= 10;
             if (!looksEmail && !looksPhone) {
-              return lang == 'ru'
-                  ? 'Некорректный телефон или email'
-                  : 'Телефон немесе email дұрыс емес';
+              return lang == 'en'
+                  ? 'Invalid phone or email'
+                  : (lang == 'kk' ? 'Телефон немесе email дұрыс емес' : 'Некорректный телефон или email');
             }
             return null;
           },
@@ -297,9 +337,6 @@ class _LoginPageState extends State<LoginPage>
     ];
   }
 
-  // Постоянная ссылка на бота (не только реактивно на шаге needsTelegramLink, срез R2) —
-  // REQ-009/telegram-otp.md: заранее открыв бота и нажав «Начать», житель получает код в
-  // Telegram мгновенно вместо ожидания SMS.
   Widget _telegramBotHint(String lang, AppColors c) {
     final username = dotenv.env['TELEGRAM_BOT_USERNAME'];
     if (username == null || username.isEmpty) return const SizedBox.shrink();
@@ -310,17 +347,17 @@ class _LoginPageState extends State<LoginPage>
             mode: LaunchMode.externalApplication),
         child: RichText(
           text: TextSpan(
-            text: lang == 'ru' ? 'Входите по телефону? Заранее откройте ' : 'Телефон арқылы кіресіз бе? Алдын ала ',
+            text: lang == 'en' ? 'Logging in with phone? Open ' : (lang == 'kk' ? 'Телефон арқылы кіресіз бе? Алдын ала ' : 'Входите по телефону? Заранее откройте '),
             style: TextStyle(color: c.textTertiary, fontSize: 12),
             children: [
               TextSpan(
-                text: lang == 'ru' ? 'Telegram-бота' : 'Telegram-ботты ашыңыз',
+                text: lang == 'en' ? 'Telegram bot' : (lang == 'kk' ? 'Telegram-ботты ашыңыз' : 'Telegram-бота'),
                 style: TextStyle(color: c.primary, fontWeight: FontWeight.w600),
               ),
               TextSpan(
-                text: lang == 'ru'
-                    ? ' и нажмите «Начать» — код придёт мгновенно.'
-                    : ' және «Бастау» батырмасын басыңыз.',
+                text: lang == 'en'
+                    ? ' and press "Start" — code arrives instantly.'
+                    : (lang == 'kk' ? ' және «Бастау» батырмасын басыңыз.' : ' и нажмите «Начать» — код придёт мгновенно.'),
               ),
             ],
           ),
@@ -336,7 +373,7 @@ class _LoginPageState extends State<LoginPage>
         child: _buildTextField(
           c: c,
           controller: _codeCtrl,
-          label: lang == 'ru' ? 'Код из письма/SMS' : 'Хат/SMS коды',
+          label: lang == 'en' ? 'Verification code' : (lang == 'kk' ? 'Хат/SMS коды' : 'Код из письма/SMS'),
           hint: '000000',
           icon: LucideIcons.keyRound,
           keyboard: TextInputType.number,
@@ -351,7 +388,7 @@ class _LoginPageState extends State<LoginPage>
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
-            'Код (dev): $_devCode',
+            'Code (dev): $_devCode',
             style: TextStyle(color: c.primaryLight, fontSize: 13),
           ),
         ),
@@ -367,7 +404,7 @@ class _LoginPageState extends State<LoginPage>
             _devCode = null;
           }),
           child: Text(
-            lang == 'ru' ? '← Изменить телефон/email' : '← Телефон/email өзгерту',
+            lang == 'en' ? '← Change phone/email' : (lang == 'kk' ? '← Телефон/email өзгерту' : '← Изменить телефон/email'),
             style: TextStyle(color: c.primary, fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ),
@@ -396,13 +433,137 @@ class _LoginPageState extends State<LoginPage>
     );
   }
 
+  Widget _authModeToggle(String lang, AppColors c) {
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.cardBorder),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _authMode = _AuthMode.code;
+                  _errorMessage = null;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _authMode == _AuthMode.code ? c.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  lang == 'en' ? 'Telegram / OTP' : (lang == 'kk' ? 'Telegram / Код' : 'По коду / Telegram'),
+                  style: TextStyle(
+                    color: _authMode == _AuthMode.code ? Colors.white : c.textSecondary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _authMode = _AuthMode.password;
+                  _errorMessage = null;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _authMode == _AuthMode.password ? c.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  lang == 'en' ? 'Chairman (Password)' : (lang == 'kk' ? 'Төраға (Құпиясөз)' : 'Председатель (Пароль)'),
+                  style: TextStyle(
+                    color: _authMode == _AuthMode.password ? Colors.white : c.textSecondary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _passwordStep(String lang, AppColors c) {
+    return [
+      _animated(
+        2,
+        child: _buildTextField(
+          c: c,
+          controller: _identifierCtrl,
+          label: 'Email',
+          hint: 'chairman@fixly.kz',
+          icon: LucideIcons.mail,
+          keyboard: TextInputType.emailAddress,
+          validator: (v) {
+            final s = v?.trim() ?? '';
+            if (s.isEmpty) return 'Введите email';
+            if (!s.contains('@')) return 'Некорректный email';
+            return null;
+          },
+        ),
+      ),
+      const SizedBox(height: 16),
+      _animated(
+        2,
+        child: _buildTextField(
+          c: c,
+          controller: _passwordCtrl,
+          label: lang == 'en' ? 'Password' : (lang == 'kk' ? 'Құпиясөз' : 'Пароль'),
+          hint: '••••••••',
+          icon: LucideIcons.lock,
+          obscureText: _obscurePassword,
+          suffixIcon: IconButton(
+            icon: Icon(
+              _obscurePassword ? LucideIcons.eyeOff : LucideIcons.eye,
+              color: c.textSecondary,
+              size: 20,
+            ),
+            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          ),
+          validator: (v) {
+            if ((v ?? '').isEmpty) return 'Введите пароль';
+            return null;
+          },
+        ),
+      ),
+    ];
+  }
+
   Widget _submitButton(String lang, AppColors c) {
-    final onPressed = _isLoading
-        ? null
-        : (_step == _Step.identifier ? _requestCode : _verifyCode);
-    final label = _step == _Step.identifier
-        ? (lang == 'ru' ? 'Получить код' : 'Код алу')
-        : (lang == 'ru' ? 'Войти' : 'Кіру');
+    final VoidCallback? onPressed;
+    if (_isLoading) {
+      onPressed = null;
+    } else if (_authMode == _AuthMode.password) {
+      onPressed = _loginWithPassword;
+    } else {
+      onPressed = (_step == _Step.identifier ? _requestCode : _verifyCode);
+    }
+
+    final String label;
+    if (_authMode == _AuthMode.password) {
+      label = lang == 'en' ? 'Sign In as Chairman' : (lang == 'kk' ? 'Төраға ретінде кіру' : 'Войти как председатель');
+    } else {
+      label = _step == _Step.identifier
+          ? (lang == 'en' ? 'Get code' : (lang == 'kk' ? 'Код алу' : 'Получить код'))
+          : (lang == 'en' ? 'Sign In' : (lang == 'kk' ? 'Кіру' : 'Войти'));
+    }
 
     return SizedBox(
       width: double.infinity,
@@ -424,6 +585,89 @@ class _LoginPageState extends State<LoginPage>
             : Text(label,
                 style: const TextStyle(
                     color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+      ),
+    );
+  }
+
+  Widget _legalConsent(String lang, AppColors c) {
+    return GestureDetector(
+      onTap: () => LegalDocsSheet.show(context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Text.rich(
+          TextSpan(
+            text: lang == 'en'
+                ? 'By signing in, you accept the '
+                : (lang == 'kk'
+                    ? 'Кіру арқылы сіз '
+                    : 'Входя в приложение, вы принимаете условия '),
+            style: TextStyle(color: c.textTertiary, fontSize: 11, height: 1.35),
+            children: [
+              TextSpan(
+                text: lang == 'en'
+                    ? 'Public Offer'
+                    : (lang == 'kk' ? 'Қоғамдық оферта' : 'Публичной оферты'),
+                style: TextStyle(
+                  color: c.primary,
+                  fontWeight: FontWeight.bold,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+              TextSpan(
+                text: lang == 'en' ? ' & ' : (lang == 'kk' ? ' және ' : ' и '),
+              ),
+              TextSpan(
+                text: lang == 'en'
+                    ? 'Privacy Policy'
+                    : (lang == 'kk' ? 'Құпиялылық саясатымен' : 'Политики конфиденциальности'),
+                style: TextStyle(
+                  color: c.primary,
+                  fontWeight: FontWeight.bold,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+              TextSpan(
+                text: lang == 'en' ? '.' : (lang == 'kk' ? ' келісесіз.' : '.'),
+              ),
+            ],
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+
+  Widget _videoInstructionsLink(String lang, AppColors c) {
+    final text = switch (lang) {
+      'kk' => '🎥 Бейненұсқаулық: Қалай кіру керек',
+      'en' => '🎥 Video Tutorial: How to Login',
+      _ => '🎥 Видеоинструкция: как войти и пользоваться',
+    };
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 4),
+        child: InkWell(
+          onTap: () => VideoInstructionsSheet.show(context),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(LucideIcons.playCircle, size: 16, color: c.primary),
+                const SizedBox(width: 6),
+                Text(
+                  text,
+                  style: TextStyle(
+                    color: c.primary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -470,11 +714,14 @@ class _LoginPageState extends State<LoginPage>
     required String hint,
     required IconData icon,
     TextInputType keyboard = TextInputType.text,
+    bool obscureText = false,
+    Widget? suffixIcon,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboard,
+      obscureText: obscureText,
       validator: validator,
       style: TextStyle(color: c.textPrimary, fontSize: 15),
       cursorColor: c.primary,
@@ -484,6 +731,7 @@ class _LoginPageState extends State<LoginPage>
         labelStyle: TextStyle(color: c.textTertiary),
         hintStyle: TextStyle(color: c.textTertiary.withOpacity(0.6)),
         prefixIcon: Icon(icon, color: c.primary, size: 19),
+        suffixIcon: suffixIcon,
         filled: true,
         fillColor: c.surfaceVariant,
         border: OutlineInputBorder(

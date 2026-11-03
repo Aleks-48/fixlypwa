@@ -14,6 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PayOnlineButton } from "../_components/PayOnlineButton";
 import { PageBody, PageHeader } from "../_components/PageHeader";
 
+import { getTranslation } from "@/lib/i18n/server";
+
 export const dynamic = "force-dynamic";
 
 const CAT: Record<string, string> = {
@@ -24,10 +26,8 @@ const CAT: Record<string, string> = {
 
 const fmt = (n: number) => `₸ ${n.toLocaleString("ru-RU")}`;
 
-// «Финансы» жителя (ui-redesign.md §3, заметки п.6/7): вкладки Платежи | Отчёты.
-// Платежи: долг по бакетам, начисления, история (реальные данные Фазы 2); онлайн-оплата —
-// заглушка (§4). Отчёты: опубликованные отчёты дома (ПДн физлиц скрыты — REQ-043).
 export default async function ResidentPaymentsPage() {
+  const { t } = await getTranslation();
   const { auth, osiId } = await requireMember();
   const occ = await getOccupantBuilding(osiId, auth.user.id);
   const [balances, charges, payments, reports] = await Promise.all([
@@ -54,15 +54,15 @@ export default async function ResidentPaymentsPage() {
 
   return (
     <>
-      <PageHeader title="Финансы" subtitle="Платежи и отчёты по вашему дому" />
+      <PageHeader title={t("nav_payments")} subtitle={t("subtitle_payments")} />
       <PageBody>
         <Tabs defaultValue="payments">
           <TabsList className="mb-4">
             <TabsTrigger value="payments" data-testid="fin-tab-payments">
-              Платежи
+              {t("nav_payments")}
             </TabsTrigger>
             <TabsTrigger value="reports" data-testid="fin-tab-reports">
-              Отчёты · {reports.length}
+              {t("nav_reports")} · {reports.length}
             </TabsTrigger>
           </TabsList>
 

@@ -7,6 +7,7 @@ import 'package:fixly_app/core/auth_repository.dart';
 import 'package:fixly_app/core/requests_repository.dart';
 import 'package:fixly_app/core/request_labels.dart';
 import 'package:fixly_app/core/events_repository.dart';
+import 'package:fixly_app/core/app_localizations.dart';
 
 // Заявка + тред (mobile-app.md §4, срез 22) — REQ-003: переписка автора заявки и председателя.
 // Живой тред (срез 24, REQ-133): подписка на SSE-события этой заявки — сообщение собеседника
@@ -195,15 +196,42 @@ class _StatusBar extends StatelessWidget {
   }
 }
 
-class _MessageBubble extends StatelessWidget {
+class _MessageBubble extends StatefulWidget {
   final RequestMessage message;
   final bool isMine;
   final AppColors colors;
   const _MessageBubble({required this.message, required this.isMine, required this.colors});
 
   @override
+  State<_MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends State<_MessageBubble> {
+  String? _translatedText;
+  bool _translating = false;
+
+  Future<void> _translate() async {
+    if (_translatedText != null) {
+      setState(() => _translatedText = null);
+      return;
+    }
+    setState(() => _translating = true);
+    final translated = await AppLocalizations.translateUserContent(widget.message.text);
+    if (mounted) {
+      setState(() {
+        _translatedText = translated;
+        _translating = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final c = colors;
+    final c = widget.colors;
+    final isMine = widget.isMine;
+    final message = widget.message;
+    final textToShow = _translatedText ?? message.text;
+
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -217,14 +245,33 @@ class _MessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(message.text, style: TextStyle(color: isMine ? Colors.white : c.textPrimary)),
+            Text(textToShow, style: TextStyle(color: isMine ? Colors.white : c.textPrimary)),
             const SizedBox(height: 4),
-            Text(
-              DateFormat('HH:mm').format(message.createdAt.toLocal()),
-              style: TextStyle(
-                color: isMine ? Colors.white70 : c.textTertiary,
-                fontSize: 11,
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  DateFormat('HH:mm').format(message.createdAt.toLocal()),
+                  style: TextStyle(
+                    color: isMine ? Colors.white70 : c.textTertiary,
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: _translating ? null : _translate,
+                  child: Text(
+                    _translating
+                        ? '...'
+                        : (_translatedText != null ? '🌐 Показать оригинал' : '🌐 Перевести'),
+                    style: TextStyle(
+                      color: isMine ? Colors.white70 : c.primary,
+                      fontSize: 10,
+                      fontWeight: AppTypography.semibold,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

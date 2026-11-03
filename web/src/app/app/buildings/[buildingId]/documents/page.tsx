@@ -8,6 +8,9 @@ import { DocumentForm } from "../../../_components/DocumentForm";
 import { DocumentList } from "../../../_components/DocumentList";
 import { PageBody, PageHeader } from "../../../_components/PageHeader";
 
+import { HouseAiAnalyticsTab } from "../../../_components/HouseAiAnalyticsTab";
+import { getTranslation } from "@/lib/i18n/server";
+
 export const dynamic = "force-dynamic";
 
 // Отдельная страница «Библиотека документов» дома (Председатель).
@@ -16,6 +19,7 @@ export default async function ChairmanDocumentsPage({
 }: {
   params: Promise<{ buildingId: string }>;
 }) {
+  const { t } = await getTranslation();
   const auth = await getCurrentAuth();
   if (!auth) redirect("/login");
   const osiId = activeChairmanOsi(auth);
@@ -30,18 +34,22 @@ export default async function ChairmanDocumentsPage({
   return (
     <>
       <PageHeader
-        title="Библиотека документов"
-        subtitle="Нормативные акты, протоколы, договоры и документы дома"
+        title={t("title_documents")}
+        subtitle={t("subtitle_documents")}
         back={{ href: `/app/buildings/${buildingId}`, label: building.address }}
       />
       <PageBody wide>
-        <div className="grid items-start gap-6 lg:grid-cols-2">
-          <Card className="rounded-2xl shadow-sm">
-            <CardContent className="pt-6">
-              <DocumentForm buildingId={buildingId} />
-            </CardContent>
-          </Card>
-          <DocumentList documents={documents} isChairman />
+        <div className="space-y-6">
+          <HouseAiAnalyticsTab buildingId={buildingId} />
+
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+            <Card className="rounded-2xl shadow-sm">
+              <CardContent className="pt-6">
+                <DocumentForm buildingId={buildingId} />
+              </CardContent>
+            </Card>
+            <DocumentList documents={documents} isChairman />
+          </div>
         </div>
       </PageBody>
     </>

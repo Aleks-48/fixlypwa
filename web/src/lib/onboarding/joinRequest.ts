@@ -81,7 +81,15 @@ export async function cancelJoinRequest(userId: string, requestId: string): Prom
 export function listOsiJoinRequests(osiId: string) {
   return prisma.osiJoinRequest.findMany({
     where: { osiId, status: "PENDING" },
-    include: { user: { select: { email: true, phone: true, fullName: true } } },
+    include: {
+      user: {
+        select: {
+          email: true,
+          phone: true,
+          occupant: { select: { fullName: true } },
+        },
+      },
+    },
     orderBy: { createdAt: "asc" },
   });
 }

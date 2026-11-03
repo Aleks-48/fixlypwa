@@ -3,39 +3,41 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ClipboardList, LayoutDashboard, Vote, Wallet } from "lucide-react";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 
 // Нижний таб-бар (<lg) по макету, role-aware (ui-redesign.md §3).
-// Житель: Обзор/Голоса/Заявки/Платежи. Председатель: Обзор/Голоса/Заявки/Финансы
-// (разделы активного дома). testid tab-requests — контракт с e2e (communication.spec).
 export function MobileTabBar({
   role,
   buildingId,
 }: {
   role: "chairman" | "resident";
-  buildingId?: string; // председатель: активный дом; нет домов → табы ведут на /app
+  buildingId?: string;
 }) {
   const pathname = usePathname();
+  const { t } = useTranslation();
   const base = buildingId ? `/app/buildings/${buildingId}` : null;
 
   const tabs =
     role === "resident"
       ? ([
-          { href: "/app", label: "Главная", icon: LayoutDashboard, testid: "tab-home" },
-          { href: "/app/polls", label: "Голоса", icon: Vote, testid: "tab-polls" },
-          { href: "/app/requests", label: "Заявки", icon: ClipboardList, testid: "tab-requests" },
-          { href: "/app/payments", label: "Финансы", icon: Wallet, testid: "tab-payments" },
+          { href: "/app", labelKey: "nav_dashboard", label: "Главная", icon: LayoutDashboard, testid: "tab-home" },
+          { href: "/app/polls", labelKey: "nav_polls", label: "Голоса", icon: Vote, testid: "tab-polls" },
+          { href: "/app/requests", labelKey: "nav_requests", label: "Заявки", icon: ClipboardList, testid: "tab-requests" },
+          { href: "/app/payments", labelKey: "nav_payments", label: "Финансы", icon: Wallet, testid: "tab-payments" },
         ] as const)
       : ([
-          { href: "/app", label: "Главная", icon: LayoutDashboard, testid: "tab-home" },
-          { href: base ? `${base}/polls` : "/app", label: "Голоса", icon: Vote, testid: "tab-polls" },
+          { href: "/app", labelKey: "nav_dashboard", label: "Главная", icon: LayoutDashboard, testid: "tab-home" },
+          { href: base ? `${base}/polls` : "/app", labelKey: "nav_polls", label: "Голоса", icon: Vote, testid: "tab-polls" },
           {
             href: base ? `${base}/requests` : "/app",
+            labelKey: "nav_requests_chairman",
             label: "Заявки",
             icon: ClipboardList,
             testid: "tab-requests",
           },
           {
             href: base ? `${base}/finance` : "/app",
+            labelKey: "nav_payments",
             label: "Финансы",
             icon: Wallet,
             testid: "tab-finance",
@@ -44,12 +46,12 @@ export function MobileTabBar({
 
   return (
     <nav
-      aria-label="Разделы кабинета"
+      aria-label={t("nav_sections_aria")}
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 lg:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="mx-auto flex max-w-xl">
-        {tabs.map(({ href, label, icon: Icon, testid }) => {
+        {tabs.map(({ href, labelKey, label, icon: Icon, testid }) => {
           const active = href === "/app" ? pathname === "/app" : pathname.startsWith(href);
           return (
             <Link
@@ -62,7 +64,7 @@ export function MobileTabBar({
               }`}
             >
               <Icon aria-hidden size={19} />
-              {label}
+              {t(labelKey) || label}
             </Link>
           );
         })}

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../src/lib/auth/password";
 
@@ -21,6 +22,16 @@ const CHAIR_PHONE = "+77015550000";
 const RESIDENT_PHONE = process.env.SEED_RESIDENT_PHONE || "+77010000001";
 const RESIDENT_TELEGRAM_CHAT_ID = process.env.SEED_RESIDENT_TG_CHAT || null;
 const OSI_NAME = "ОСИ Демо (Кокшетау)";
+
+async function ensureDemoAccounts(osiId: string) {
+  const apartments = await prisma.apartment.findMany({ where: { osiId } });
+  for (const apartment of apartments) {
+    await prisma.account.upsert({
+      where: { apartmentId: apartment.id }, update: {},
+      create: { osiId, apartmentId: apartment.id, accountNumber: `DEMO-${apartment.number}` },
+    });
+  }
+}
 
 async function main() {
   const chair = await prisma.user.upsert({
@@ -46,6 +57,7 @@ async function main() {
 
   const existing = await prisma.osi.findFirst({ where: { name: OSI_NAME } });
   if (existing) {
+    await ensureDemoAccounts(existing.id);
     console.log(`seed: демо-ОСИ уже существует (${existing.id}) — пропускаю структуру`);
     await prisma.$disconnect();
     return;
@@ -91,6 +103,7 @@ async function main() {
     },
   });
 
+  await ensureDemoAccounts(osi.id);
   console.log(`seed: создана демо-ОСИ ${osi.id}`);
   console.log(`  Председатель: ${CHAIR_EMAIL} / demo12345`);
   console.log(`  Житель:       ${RESIDENT_PHONE} (вход по OTP)`);

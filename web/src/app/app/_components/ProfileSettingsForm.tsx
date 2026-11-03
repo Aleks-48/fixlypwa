@@ -90,20 +90,24 @@ export function ProfileSettingsForm({ fullName, phone, email, language }: Props)
 
       {/* Выбор языка */}
       <div className="grid gap-2">
-        <Label>Язык интерфейса</Label>
-        <div className="flex gap-3">
-          {(["ru", "kk"] as const).map((lang) => (
+        <Label>Язык интерфейса / Тіл / Language</Label>
+        <div className="flex gap-2 sm:gap-3">
+          {[
+            { code: "ru", label: "🇷🇺 Русский" },
+            { code: "kk", label: "🇰🇿 Қазақша" },
+            { code: "en", label: "🇬🇧 English" },
+          ].map((item) => (
             <button
-              key={lang}
+              key={item.code}
               type="button"
-              onClick={() => setForm({ ...form, language: lang })}
-              className={`flex-1 rounded-xl border-2 py-3 text-sm font-semibold transition-colors ${
-                form.language === lang
-                  ? "border-primary bg-primary/10 text-primary"
+              onClick={() => setForm({ ...form, language: item.code })}
+              className={`flex-1 rounded-xl border-2 py-3 text-xs sm:text-sm font-semibold transition-all ${
+                form.language === item.code
+                  ? "border-primary bg-primary/10 text-primary shadow-sm"
                   : "border-border bg-secondary/40 text-muted-foreground hover:border-primary/40"
               }`}
             >
-              {lang === "ru" ? "🇷🇺 Русский" : "🇰🇿 Қазақша"}
+              {item.label}
             </button>
           ))}
         </div>

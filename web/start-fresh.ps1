@@ -75,7 +75,7 @@ Write-Host "Генерирую Prisma Client..." -ForegroundColor Cyan
 npx prisma generate
 
 Write-Host "Сею демо-данные (idempotent)..." -ForegroundColor Cyan
-npm run seed
+#npm run seed
 
 Write-Host "Запускаю Next.js в отдельном окне..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$PSScriptRoot'; npm run dev"

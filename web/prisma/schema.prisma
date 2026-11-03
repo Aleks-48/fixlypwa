@@ -78,8 +78,10 @@ model OsiJoinRequest {
 
 model User {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  phone        String   @unique
+  phone        String?  @unique
   email        String?  @unique
+  fullName     String?  @map("full_name")
+  language     String   @default("ru") @db.VarChar(5)
   passwordHash String?  @map("password_hash")
   isSuperadmin Boolean  @default(false) @map("is_superadmin")
   createdAt    DateTime @default(now()) @map("created_at")
@@ -90,11 +92,14 @@ model User {
   pushSubscriptions      PushSubscription[]
   notifications          Notification[]
   master                 Master?
-  votes                  Vote[] // <--- ДОБАВЬ ЭТУ СТРОКУ
+  votes                  Vote[]
   OsiJoinRequest         OsiJoinRequest[]
   FcmToken               FcmToken[]
   AssistantConversation  AssistantConversation[]
   NotificationPreference NotificationPreference[]
+  reviews                MasterReview[]
+  documentReads          DocumentRead[]
+  ikomekComplaints       IKomekComplaint[]
 
   @@map("users")
 }
@@ -163,6 +168,13 @@ model TelegramLink {
 /// счётчик попыток; requestIp — для rate-limit по IP. Служит и rate-limit-журналом: свежие
 /// записи по identifier/ip в окне ограничивают частоту запросов (SMS платные — защита от
 /// SMS-pumping; для email — защита от спама с нашего домена).
+model TelegramUpdateReceipt {
+  id          Int      @id
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("telegram_update_receipt")
+}
+
 model OtpChallenge {
   id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   identifier String
@@ -228,18 +240,29 @@ enum MasterStatus {
 /// витрине даёт ОТДЕЛЬНЫЙ контекст forMaster() (city), не forTenant(). Один User — максимум
 /// один Master (1:1): роль "мастер" не пересекается с ролями UserOsiRole.
 model Master {
-  id         String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId     String            @unique @map("user_id") @db.Uuid
-  fullName   String            @map("full_name")
-  city       String
-  categories RequestCategory[]
-  bio        String?
-  status     MasterStatus      @default(PENDING)
-  createdAt  DateTime          @default(now()) @map("created_at")
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String            @unique @map("user_id") @db.Uuid
+  fullName     String            @map("full_name")
+  city         String
+  categories   RequestCategory[]
+  bio          String?
+  status       MasterStatus      @default(PENDING)
+  /// Кэшированный средний рейтинг (пересчитывается при добавлении отзыва)
+  rating         Float             @default(0.0)
+  /// Кол-во отзывов (денормализация для быстрого отображения)
+  reviewsCount   Int               @default(0) @map("reviews_count")
+  /// Комиссия маркетплейса (по умолчанию 3% = 0.030)
+  commissionRate Decimal           @default(0.030) @map("commission_rate") @db.Decimal(4, 3)
+  /// Географические координаты местоположения мастера на карте
+  lat            Float?
+  lng            Float?
+  createdAt      DateTime          @default(now()) @map("created_at")
 
-  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  offers    MarketOffer[]
-  portfolio MasterPortfolioItem[]
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offers       MarketOffer[]
+  portfolio    MasterPortfolioItem[]
+  reviews      MasterReview[]
+  assignedReqs Request[]             @relation("RequestMaster")
 
   @@index([city, status])
   @@map("master")
@@ -260,6 +283,28 @@ model MasterPortfolioItem {
 
   @@index([masterId])
   @@map("master_portfolio_item")
+}
+
+/// Отзыв о работе мастера маркетплейса. Identity-слой (вне RLS).
+model MasterReview {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  // Preserve legacy tenant/author metadata; new reviews always provide both.
+  osiId        String?  @map("osi_id") @db.Uuid
+  masterId     String   @map("master_id") @db.Uuid
+  authorUserId String?  @map("author_user_id") @db.Uuid
+  requestId    String?  @map("request_id") @db.Uuid
+  rating       Int
+  comment      String?
+  photoUrls    String[] @default([]) @map("photo_urls")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  master  Master   @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  author  User?    @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  request Request? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  @@index([masterId])
+  @@index([authorUserId])
+  @@map("master_review")
 }
 
 // =====================================================================================
@@ -290,7 +335,8 @@ model Building {
   infoItems     InfoItem[]
   polls         Poll[]
   meetings      Meeting[]
-  documents     Document[]
+  documents        Document[]
+  ikomekComplaints IKomekComplaint[]
 
   @@index([osiId])
   @@map("building")
@@ -313,13 +359,15 @@ model Apartment {
   buildingId String         @map("building_id") @db.Uuid
   number     String
   area       Decimal?       @db.Decimal(8, 2) // м²
+  rooms      Int?           // Кол-во комнат
   type       ApartmentType?
 
-  building  Building   @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  account   Account?
-  owners    Owner[]
-  occupants Occupant[]
-  requests  Request[]
+  building         Building          @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  account          Account?
+  owners           Owner[]
+  occupants        Occupant[]
+  requests         Request[]
+  ikomekComplaints IKomekComplaint[]
 
   @@index([osiId])
   @@index([buildingId])
@@ -467,6 +515,7 @@ model Payment {
   /// null для ручного ввода председателем. Информационная, НЕ используется для идемпотентности
   /// (та обеспечивается пересчётом долга на сервере при каждом вызове).
   gatewayRef     String?        @map("gateway_ref")
+  bankRef        String?        @map("bank_ref")
   incomeCategory IncomeCategory @map("income_category")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -474,6 +523,7 @@ model Payment {
   @@index([osiId])
   @@index([accountId])
   @@map("payment")
+  @@unique([osiId, bankRef])
 }
 
 // ---- Банковские счета и расходы (report-spec.md, bank-import.md) — REQ-025/026 ----
@@ -568,6 +618,7 @@ model Expense {
   contractRef        String?         @map("contract_ref") // ДГП/договор/акт
   isInternalTransfer Boolean         @default(false) @map("is_internal_transfer") // перевод между своими счетами — не доход/расход
   actUrl             String?         @map("act_url") // подтверждающий акт (7.2.1)
+  bankRef            String?         @map("bank_ref")
 
   building     Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   bankAccount  BankAccount   @relation(fields: [bankAccountId], references: [id])
@@ -577,6 +628,7 @@ model Expense {
   @@index([buildingId])
   @@index([bankAccountId])
   @@map("expense")
+  @@unique([osiId, bankRef])
 }
 
 // ---- Отчёты и подписка ----
@@ -761,6 +813,8 @@ model Request {
   buildingId   String          @map("building_id") @db.Uuid
   apartmentId  String?         @map("apartment_id") @db.Uuid
   authorUserId String          @map("author_user_id") @db.Uuid
+  /// Назначенный мастер (необязательно) — председатель назначает из списка проверенных мастеров
+  masterId     String?         @map("master_id") @db.Uuid
   category     RequestCategory
   text         String
   photoUrls    String[]        @map("photo_urls")
@@ -770,12 +824,15 @@ model Request {
 
   building      Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   apartment     Apartment?       @relation(fields: [apartmentId], references: [id])
+  master        Master?          @relation("RequestMaster", fields: [masterId], references: [id], onDelete: SetNull)
   messages      RequestMessage[]
   marketListing MarketListing?
+  reviews       MasterReview[]
 
   @@index([osiId])
   @@index([buildingId])
   @@index([status])
+  @@index([masterId])
   @@map("request")
 }
 
@@ -893,6 +950,7 @@ enum DocumentCategory {
   GOV_REGULATION
   REPORT
   PROTOCOL
+  ESTIMATE // Смета работ
   CONTRACT
   TECHNICAL
   OTHER
@@ -912,15 +970,75 @@ model Document {
   fileType     String?          @map("file_type")
   isPublic     Boolean          @default(true) @map("is_public")
   authorUserId String           @map("author_user_id") @db.Uuid
+  /// Ссылка на голосование (для протоколов опросов)
+  pollId       String?          @map("poll_id") @db.Uuid
   createdAt    DateTime         @default(now()) @map("created_at")
   updatedAt    DateTime         @updatedAt @map("updated_at")
 
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  building Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  poll     Poll?          @relation(fields: [pollId], references: [id], onDelete: SetNull)
+  reads    DocumentRead[]
 
   @@index([osiId])
   @@index([buildingId])
   @@index([category])
+  @@index([pollId])
   @@map("document")
+}
+
+/// Фиксация ознакомления с документом жителем (статистика для председателя).
+model DocumentRead {
+  osiId      String   @map("osi_id") @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  readAt     DateTime @default(now()) @map("read_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, userId])
+  @@index([osiId])
+  @@map("document_read")
+}
+
+enum IKomekCategory {
+  HEATING
+  WATER_SUPPLY
+  YARD
+  GARBAGE
+  LIGHTING
+  OTHER
+}
+
+enum IKomekStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+}
+
+/// Обращение жителя в службу iKomek 109 (Горячая линия города)
+model IKomekComplaint {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  osiId        String         @map("osi_id") @db.Uuid
+  buildingId   String         @map("building_id") @db.Uuid
+  apartmentId  String?        @map("apartment_id") @db.Uuid
+  authorUserId String         @map("author_user_id") @db.Uuid
+  category     IKomekCategory
+  description  String
+  photoUrls    String[]       @default([]) @map("photo_urls")
+  status       IKomekStatus   @default(PENDING)
+  ticketNumber String?        @map("ticket_number")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  building  Building   @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  apartment Apartment? @relation(fields: [apartmentId], references: [id], onDelete: SetNull)
+  user      User       @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([osiId])
+  @@index([buildingId])
+  @@index([authorUserId])
+  @@map("ikomek_complaint")
 }
 
 enum NotificationType {
@@ -1021,6 +1139,7 @@ model Poll {
 
   building Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   options  PollOption[]
+  Document Document[]
 
   @@index([osiId])
   @@index([buildingId])
@@ -1104,3 +1223,4 @@ model NotificationPreference {
   @@index([osiId])
   @@map("notification_preference")
 }
+

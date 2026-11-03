@@ -1,6 +1,6 @@
-import "server-only";
 import { prisma } from "@/lib/db/prisma";
-import type { RequestCategory } from "@prisma/client";
+import type { RequestCategory, MasterPortfolioItem } from "@prisma/client";
+import "server-only";
 
 // Сервисный слой модуля «Карта и портфолио мастеров» (docs/specs/masters-map.md, REQ-072..075).
 // Master и MasterPortfolioItem — identity-уровень (вне RLS), мастера не привязаны к конкретной ОСИ.
@@ -47,12 +47,12 @@ export async function listApprovedMasters(
   });
   const userMap = new Map(users.map((u) => [u.id, u.phone]));
 
-  const portfolioItems = await (prisma as any).masterPortfolioItem?.findMany({
+  const portfolioItems = await prisma.masterPortfolioItem.findMany({
     where: { masterId: { in: masterIds } },
     orderBy: { createdAt: "desc" },
-  }).catch(() => []);
+  });
 
-  const portfolioMap = new Map<string, any[]>();
+  const portfolioMap = new Map<string, MasterPortfolioItem[]>();
   if (Array.isArray(portfolioItems)) {
     for (const item of portfolioItems) {
       const list = portfolioMap.get(item.masterId) || [];
@@ -87,10 +87,10 @@ export async function getMasterProfile(masterId: string): Promise<MasterWithPort
     select: { phone: true },
   });
 
-  const portfolio = await (prisma as any).masterPortfolioItem?.findMany({
+  const portfolio = await prisma.masterPortfolioItem.findMany({
     where: { masterId: master.id },
     orderBy: { createdAt: "desc" },
-  }).catch(() => []);
+  });
 
   return {
     id: master.id,
@@ -101,4 +101,27 @@ export async function getMasterProfile(masterId: string): Promise<MasterWithPort
     phone: user?.phone ?? null,
     portfolio: Array.isArray(portfolio) ? portfolio : [],
   };
+}
+
+/**
+ * Добавить выполненную работу в портфолио мастера
+ */
+export async function addPortfolioItem(
+  masterId: string,
+  input: {
+    title: string;
+    description?: string;
+    category: RequestCategory;
+    photoUrls: string[];
+  },
+) {
+  return prisma.masterPortfolioItem.create({
+    data: {
+      masterId,
+      title: input.title,
+      description: input.description ?? null,
+      category: input.category,
+      photoUrls: input.photoUrls,
+    },
+  });
 }

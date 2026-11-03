@@ -84,6 +84,7 @@ class _ChairmanPollsScreenState extends State<ChairmanPollsScreen> {
         iconTheme: IconThemeData(color: c.textPrimary),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'create_poll_fab',
         onPressed: _openCreate,
         backgroundColor: c.primary,
         child: const Icon(Icons.add, color: Colors.white),

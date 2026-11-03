@@ -1,67 +1,67 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import {
-  ArrowRight,
-  Building2,
-  ClipboardList,
-  Home as HomeIcon,
-  ListTodo,
-  Megaphone,
-  Vote,
-  Wallet,
-} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card,CardContent } from "@/components/ui/card";
+import { activeChairmanOsi,activeMemberOsi } from "@/lib/auth/guards";
 import { getCurrentAuth } from "@/lib/auth/session";
-import { activeChairmanOsi, activeMemberOsi } from "@/lib/auth/guards";
-import { listBuildings } from "@/lib/onboarding/service";
 import {
-  listAnnouncements,
-  listRequests,
-  listInfoItems,
-  getOccupantBuilding,
+getOccupantBuilding,
+listAnnouncements,
+listInfoItems,
+listRequests,
 } from "@/lib/comms/service";
-import { requestStatusLabels } from "@/lib/comms/labels";
-import { listPolls } from "@/lib/polls/service";
+import { forTenant } from "@/lib/db/tenant";
+import { getMasterByUserId } from "@/lib/master/service";
 import { residentBalances } from "@/lib/finance/service";
 import { markRead } from "@/lib/notifications/service";
-import { forTenant } from "@/lib/db/tenant";
+import { listBuildings } from "@/lib/onboarding/service";
 import { maskPhone } from "@/lib/phone";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { CreateOsiForm } from "./_components/CreateOsiForm";
-import { JoinOsiCard } from "./_components/JoinOsiCard";
-import { JoinRequestsPanel } from "./_components/JoinRequestsPanel";
-import { listOsiJoinRequests } from "@/lib/onboarding/joinRequest";
+import { listPolls } from "@/lib/polls/service";
+import {
+ArrowRight,
+Building2,
+ClipboardList,
+Home as HomeIcon,
+ListTodo,
+Megaphone,
+Vote,
+Wallet,
+} from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AddBuildingForm } from "./_components/AddBuildingForm";
-import { MarkReadButton } from "./_components/MarkReadButton";
-import { RequestCard } from "./_components/RequestCard";
-import { PollCard } from "./_components/PollCard";
-import { PageBody, PageHeader } from "./_components/PageHeader";
-import { StatCard } from "./_components/StatCard";
-import { PayOnlineButton } from "./_components/PayOnlineButton";
 import { CategoryTile } from "./_components/categoryIcons";
 import { ContactChairman } from "./_components/ContactChairman";
+import { CreateOsiForm } from "./_components/CreateOsiForm";
+import { EmergencyBoard } from "./_components/EmergencyBoard";
+import { JoinOsiCard } from "./_components/JoinOsiCard";
+import { JoinRequestsPanel } from "./_components/JoinRequestsPanel";
+import { MarkReadButton } from "./_components/MarkReadButton";
+import { PageBody,PageHeader } from "./_components/PageHeader";
+import { PayOnlineButton } from "./_components/PayOnlineButton";
+import { PollCard } from "./_components/PollCard";
+import { RequestCard } from "./_components/RequestCard";
+import { StatCard } from "./_components/StatCard";
 import { LogoutButton } from "./LogoutButton";
+
+import { getTranslation,localeForLanguage } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
-// Кабинет — role-aware (user-roles.md). Председатель: дашборд + онбординг дома.
-// Новый пользователь без ОСИ: предложение создать ОСИ (Q-051). Житель: лента + таб-бар.
 export default async function AppHome({
   searchParams,
 }: {
   searchParams: Promise<{ n?: string; welcome?: string }>;
 }) {
+  const { t } = await getTranslation();
   const auth = await getCurrentAuth();
   if (!auth) redirect("/login");
 
   const chairmanOsi = activeChairmanOsi(auth);
-  // Житель определяется по роли в активной ОСИ (UserOsiRole — identity), НЕ по occupant
-  // (occupant под RLS и здесь недоступен). Дом берётся через getOccupantBuilding (forTenant).
   const memberOsi = chairmanOsi ? null : activeMemberOsi(auth);
   const activeOsi = chairmanOsi ?? memberOsi;
 
-  // Deep link из push (/app?n=<id>, REQ-105): открытие по уведомлению помечает его прочитанным.
-  // welcome=resident — пришёл из регистрации жителя (REQ-007): инструкция о привязке первой.
+  // TECH-012: masters without OSI membership have their own cabinet.
+  if (!activeOsi && (await getMasterByUserId(auth.user.id))) redirect("/master");
+
   const { n, welcome } = await searchParams;
   if (activeOsi && n) {
     await markRead(activeOsi, auth.user.id, n).catch(() => {});
@@ -71,12 +71,10 @@ export default async function AppHome({
   return (
     <>
       <PageHeader
-        title="Главная"
+        title={t("nav_dashboard")}
         subtitle={
           <span data-testid="me">{auth.user.email ?? maskPhone(auth.user.phone)}</span>
         }
-        // Без активной ОСИ MobileMenu не рендерится (getShellContext возвращает null — там же
-        // обычно лежит выход), пользователь без роли (REQ-007) иначе не может выйти вообще.
         actions={!activeOsi ? <LogoutButton /> : undefined}
       />
       <PageBody wide={Boolean(chairmanOsi)}>
@@ -86,14 +84,12 @@ export default async function AppHome({
           <ResidentView osiId={memberOsi} userId={auth.user.id} />
         ) : (
           <section className="grid max-w-xl gap-4">
-            {/* Пользователь без ролей (REQ-007): два сценария — житель ждёт привязки,
-                председатель создаёт ОСИ. Порядок блоков зависит от того, откуда пришёл. */}
             {residentFirst ? (
               <>
                 <JoinOsiCard />
                 <details>
                   <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">
-                    Вы председатель? Создать ОСИ
+                    {t("label_are_you_chairman")}
                   </summary>
                   <Card className="mt-3 rounded-2xl shadow-sm">
                     <CardContent className="pt-6">
@@ -105,8 +101,7 @@ export default async function AppHome({
             ) : (
               <>
                 <p className="text-muted-foreground">
-                  У вас пока нет ОСИ. Создайте её — вы станете председателем и сможете завести
-                  дом, квартиры и жителей.
+                  {t("label_no_osi_notice")}
                 </p>
                 <Card className="rounded-2xl shadow-sm">
                   <CardContent className="pt-6">
@@ -124,47 +119,48 @@ export default async function AppHome({
 }
 
 async function ChairmanDashboard({ osiId }: { osiId: string }) {
+  const { t, language } = await getTranslation();
+  const locale = localeForLanguage(language);
+  const statusLabels = {
+    RECEIVED: t("request_status_received"),
+    IN_PROGRESS: t("status_in_progress"),
+    RESOLVED: t("request_status_resolved"),
+  } as const;
   const buildings = await listBuildings(osiId);
-  // Сводка дашборда по макету: 4 стат-карточки + активные голосования + последние заявки.
-const now = new Date();
-const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
-  await Promise.all([
-    forTenant(osiId, async (tx) => ({
-      newRequests: await tx.request.count({ where: { status: "RECEIVED" } }),
-      apartments: await tx.apartment.count(),
-      activePolls: await tx.poll.findMany({
-        where: { OR: [{ deadline: null }, { deadline: { gt: now } }] },
-        orderBy: { createdAt: "desc" },
-        take: 3,
-        include: { options: { include: { _count: { select: { votes: true } } } } },
-      }),
-      recentRequests: await tx.request.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 4,
-        include: { apartment: { select: { number: true } } },
-      }),
-    })),
-    // Второй промис — заявки на вступление
-    forTenant(osiId, async (tx) =>
-      (tx as any).osiJoinRequest?.findMany({
-        where: { osiId, status: "PENDING" },
-        include: {
-          user: {
-            select: {
-              email: true,
-              phone: true,
-              occupant: {
-                select: {
-                  fullName: true,
-                },
+  const now = new Date();
+  const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
+    await Promise.all([
+      forTenant(osiId, async (tx) => ({
+        newRequests: await tx.request.count({ where: { status: "RECEIVED" } }),
+        apartments: await tx.apartment.count(),
+        activePolls: await tx.poll.findMany({
+          where: { OR: [{ deadline: null }, { deadline: { gt: now } }] },
+          orderBy: { createdAt: "desc" },
+          take: 3,
+          include: { options: { include: { _count: { select: { votes: true } } } } },
+        }),
+        recentRequests: await tx.request.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 4,
+          include: { apartment: { select: { number: true } } },
+        }),
+      })),
+      forTenant(osiId, async (tx) =>
+        (tx).osiJoinRequest?.findMany({
+          where: { osiId, status: "PENDING" },
+          include: {
+            user: {
+              select: {
+                email: true,
+                phone: true,
+                fullName: true,
               },
             },
           },
-        },
-        orderBy: { createdAt: "asc" },
-      }) ?? [],
-    ),
-  ]);
+          orderBy: { createdAt: "asc" },
+        }) ?? [],
+      ),
+    ]);
 
   return (
     <section className="grid gap-6">
@@ -173,7 +169,7 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
         <StatCard
           icon={ClipboardList}
           tile="bg-warning-soft text-warning"
-          label="Новые заявки"
+          label={t("label_new_requests_stat")}
           value={newRequests}
           valueClassName={newRequests > 0 ? "text-destructive" : ""}
           testid="stat-new-requests"
@@ -181,14 +177,25 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
         <StatCard
           icon={Vote}
           tile="bg-accent text-accent-foreground"
-          label="Активные голосования"
+          label={t("active_polls")}
           value={activePolls.length}
         />
-        <StatCard icon={Building2} tile="bg-success-soft text-success" label="Дома" value={buildings.length} />
+        {buildings[0] ? (
+          <Link href={`/app/buildings/${buildings[0].id}/polls`} className="no-underline">
+            <StatCard
+              icon={Vote}
+              tile="bg-primary/10 text-primary"
+              label={t("nav_polls")}
+              value={activePolls.length}
+            />
+          </Link>
+        ) : (
+          <StatCard icon={Building2} tile="bg-success-soft text-success" label={t("label_buildings")} value={buildings.length} />
+        )}
         <StatCard
           icon={HomeIcon}
           tile="bg-secondary text-muted-foreground"
-          label="Квартиры"
+          label={t("label_apartments")}
           value={apartments}
         />
       </div>
@@ -199,13 +206,13 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
             <Card className="rounded-2xl shadow-sm">
               <CardContent className="pt-6">
                 <div className="mb-4 flex items-baseline justify-between">
-                  <h2 className="m-0 text-base font-bold">Активные голосования</h2>
+                  <h2 className="m-0 text-base font-bold">{t("active_polls")}</h2>
                   {buildings[0] && (
                     <Link
                       href={`/app/buildings/${buildings[0].id}/polls`}
                       className="text-sm font-semibold text-primary no-underline"
                     >
-                      Все
+                      {t("label_all_link")}
                     </Link>
                   )}
                 </div>
@@ -219,7 +226,8 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
                           <span className="font-semibold">{p.question}</span>
                           {p.deadline && (
                             <span className="shrink-0 text-muted-foreground">
-                              до {p.deadline.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}
+                              {t("label_until")}{" "}
+                              {p.deadline.toLocaleDateString(locale, { day: "numeric", month: "long" })}
                             </span>
                           )}
                         </div>
@@ -227,7 +235,7 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
                           <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
                         </div>
                         <p className="m-0 mt-1 text-xs text-muted-foreground">
-                          {votes} голосов из {apartments} квартир
+                          {votes} {t("label_votes_from_apartments")} {apartments}
                         </p>
                       </div>
                     );
@@ -240,13 +248,13 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
             <Card className="rounded-2xl shadow-sm">
               <CardContent className="pt-6">
                 <div className="mb-4 flex items-baseline justify-between">
-                  <h2 className="m-0 text-base font-bold">Последние заявки</h2>
+                  <h2 className="m-0 text-base font-bold">{t("label_recent_requests")}</h2>
                   {buildings[0] && (
                     <Link
                       href={`/app/buildings/${buildings[0].id}/requests`}
                       className="text-sm font-semibold text-primary no-underline"
                     >
-                      Все
+                      {t("label_all_link")}
                     </Link>
                   )}
                 </div>
@@ -257,8 +265,8 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
                       <div className="min-w-0 flex-1">
                         <p className="m-0 truncate text-sm font-semibold">{r.text}</p>
                         <p className="m-0 text-xs text-muted-foreground">
-                          {r.apartment ? `кв. ${r.apartment.number} · ` : ""}
-                          {r.createdAt.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}
+                          {r.apartment ? `${t("label_apt_prefix")} ${r.apartment.number} · ` : ""}
+                          {r.createdAt.toLocaleDateString(locale, { day: "numeric", month: "long" })}
                         </p>
                       </div>
                       <span
@@ -270,7 +278,7 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
                               : "bg-success-soft text-success"
                         }`}
                       >
-                        {requestStatusLabels[r.status]}
+                        {statusLabels[r.status as keyof typeof statusLabels] ?? r.status}
                       </span>
                     </li>
                   ))}
@@ -282,9 +290,11 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
       )}
 
       <div className="grid gap-3">
-        <h2 className="m-0 text-base font-semibold">Дома ({buildings.length})</h2>
+        <h2 className="m-0 text-base font-semibold">
+          {t("label_buildings")} ({buildings.length})
+        </h2>
         {buildings.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Домов пока нет. Добавьте первый дом ниже.</p>
+          <p className="text-sm text-muted-foreground">{t("label_no_buildings_yet")}</p>
         ) : (
           <ul className="m-0 grid list-none gap-2 p-0">
             {buildings.map((b) => (
@@ -309,7 +319,7 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
       </div>
 
       <div className="grid gap-3">
-        <h2 className="m-0 text-base font-semibold">Добавить дом</h2>
+        <h2 className="m-0 text-base font-semibold">{t("label_add_building")}</h2>
         <Card className="rounded-2xl shadow-sm">
           <CardContent className="pt-6">
             <AddBuildingForm />
@@ -321,12 +331,11 @@ const [{ newRequests, apartments, activePolls, recentRequests }, joinRequests] =
 }
 
 async function ResidentView({ osiId, userId }: { osiId: string; userId: string }) {
+  const { t, language } = await getTranslation();
   const occ = await getOccupantBuilding(osiId, userId);
   if (!occ?.apartment) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Ваша квартира ещё не привязана. Обратитесь к председателю ОСИ.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("label_apartment_not_linked")}</p>
     );
   }
 
@@ -338,6 +347,13 @@ async function ResidentView({ osiId, userId }: { osiId: string; userId: string }
     residentBalances(osiId, userId),
     listInfoItems(osiId, occ.apartment.buildingId),
   ]);
+  const emergencyContacts = infoItems
+    .filter((i) => i.type === "EMERGENCY_CONTACTS")
+    .map((i) => ({
+      title: i.title,
+      phone: i.content,
+      type: "emergency" as const,
+    }));
   const chairContacts = infoItems
     .filter((i) => i.type === "CHAIRMAN_CONTACTS")
     .map((i) => ({ title: i.title, content: i.content }));
@@ -351,25 +367,49 @@ async function ResidentView({ osiId, userId }: { osiId: string; userId: string }
 
   return (
     <section className="grid gap-6">
+      {emergencyContacts.length > 0 && (
+        <EmergencyBoard
+          osiName={occ.apartment.building.address}
+          buildingAddress={occ.apartment.building.address}
+          contacts={emergencyContacts}
+        />
+      )}
+
       <div className="grid grid-cols-3 gap-2.5 lg:gap-4">
         <StatCard
           icon={Wallet}
           tile={totalDebt > 0 ? "bg-destructive-soft text-destructive" : "bg-success-soft text-success"}
-          label="К оплате"
+          label={t("label_to_pay")}
           value={`₸ ${totalDebt.toLocaleString("ru-RU")}`}
         />
-        <StatCard
-          icon={Vote}
-          tile="bg-accent text-accent-foreground"
-          label="Ждут голоса"
-          value={openPolls.filter((p) => p.myOptionId === null).length}
-        />
-        <StatCard
-          icon={ClipboardList}
-          tile="bg-warning-soft text-warning"
-          label="Заявки в работе"
-          value={requestsInWork}
-        />
+        <Link href="/app/polls" className="no-underline">
+          <StatCard
+            icon={Vote}
+            tile={
+              openPolls.filter((p) => p.myOptionId === null).length > 0 
+                ? "bg-destructive-soft text-destructive" 
+                : openPolls.length > 0 
+                  ? "bg-accent text-accent-foreground" 
+                  : "bg-muted text-muted-foreground"
+            }
+            label={t("nav_polls")}
+            value={
+              openPolls.filter((p) => p.myOptionId === null).length > 0
+                ? (language === "kk" ? "Дауыс керек!" : language === "en" ? "Vote needed!" : "Нужен голос!")
+                : openPolls.length > 0
+                  ? (language === "kk" ? "Белсенді" : language === "en" ? "Active" : "Активно")
+                  : (language === "kk" ? "Аяқталған" : language === "en" ? "Finished" : "Завершено")
+            }
+          />
+        </Link>
+        <Link href="/app/requests" className="no-underline">
+          <StatCard
+            icon={ClipboardList}
+            tile="bg-warning-soft text-warning"
+            label={t("label_requests_in_work")}
+            value={requestsInWork}
+          />
+        </Link>
       </div>
 
       {balances && (
@@ -380,7 +420,7 @@ async function ResidentView({ osiId, userId }: { osiId: string; userId: string }
           <CardContent className="pt-6">
             <div className="flex items-baseline justify-between gap-2">
               <div>
-                <p className="m-0 text-sm opacity-85">К оплате</p>
+                <p className="m-0 text-sm opacity-85">{t("label_to_pay")}</p>
                 <p className="m-0 mt-0.5 text-3xl font-extrabold tracking-tight">
                   ₸ {totalDebt.toLocaleString("ru-RU")}
                 </p>
@@ -390,12 +430,14 @@ async function ResidentView({ osiId, userId }: { osiId: string; userId: string }
                 className="shrink-0 rounded-full bg-white/15 text-primary-foreground"
                 data-testid="resident-debt"
               >
-                {totalDebt > 0 ? `долг ${totalDebt.toLocaleString("ru-RU")} ₸` : "долгов нет"}
+                {totalDebt > 0
+                  ? `${t("label_debt_prefix")} ${totalDebt.toLocaleString("ru-RU")} ₸`
+                  : t("label_no_debt")}
               </Badge>
             </div>
             <p className="mb-4 mt-1.5 text-[13px] opacity-85">
-              Содержание: {balances.MAINTENANCE.debt} ₸ · Целевые: {balances.TARGETED.debt} ₸ ·
-              Кап.ремонт: {balances.CAPITAL_REPAIR.debt} ₸
+              {t("charge_maintenance")}: {balances.MAINTENANCE.debt} ₸ · {t("charge_targeted")}:{" "}
+              {balances.TARGETED.debt} ₸ · {t("charge_cap_repair")}: {balances.CAPITAL_REPAIR.debt} ₸
             </p>
             <div className="grid gap-2 sm:max-w-xs">
               {totalDebt > 0 && <PayOnlineButton amount={totalDebt} hero />}
@@ -403,41 +445,66 @@ async function ResidentView({ osiId, userId }: { osiId: string; userId: string }
                 href="/app/payments"
                 className="text-center text-sm font-semibold text-primary-foreground/90 underline-offset-2"
               >
-                Все начисления и история →
+                {t("label_all_charges")}
               </Link>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {openPolls.length > 0 && (
-        <div className="grid gap-3">
-          <div className="flex items-baseline justify-between">
-            <h2 className="m-0 flex items-center gap-1.5 text-base font-bold">
-              <ListTodo aria-hidden size={16} className="text-muted-foreground" /> Требует вашего
-              голоса
-            </h2>
-            <Link href="/app/polls" className="text-sm font-semibold text-primary no-underline">
-              Все
-            </Link>
-          </div>
-          {openPolls.map((p) => (
-            <PollCard key={p.id} poll={p} />
-          ))}
+      <div className="grid gap-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="m-0 flex items-center gap-1.5 text-base font-bold">
+            <ListTodo aria-hidden size={16} className="text-muted-foreground" />{" "}
+            {openPolls.length > 0 ? t("label_requires_your_vote") : (language === "kk" ? "Үй дауыс берулері" : language === "en" ? "Building Polls" : "Голосования дома")}
+          </h2>
+          <Link href="/app/polls" className="text-sm font-semibold text-primary no-underline">
+            {openPolls.length > 0 ? t("label_all_link") : (language === "kk" ? "Мұрағат және есептер" : language === "en" ? "Archive & Reports" : "Архив и отчёты")}
+          </Link>
         </div>
-      )}
+
+        {openPolls.length > 0 ? (
+          openPolls.map((p) => (
+            <PollCard key={p.id} poll={p} />
+          ))
+        ) : (
+          <Card className="rounded-2xl border border-border/80 bg-card/60 shadow-sm p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold">
+                  ✓
+                </div>
+                <div>
+                  <p className="m-0 text-xs font-bold text-foreground">
+                    {language === "kk" ? "Қазіргі уақытта белсенді дауыс берулер жоқ" : language === "en" ? "No active polls right now" : "Активных голосований нет"}
+                  </p>
+                  <p className="m-0 text-[11px] text-muted-foreground">
+                    {language === "kk" ? "Барлық жиналыстар аяқталды. Нәтижелер мен есептерді мұрағаттан көруге болады." : language === "en" ? "All meetings closed. You can review results and reports in the archive." : "Все собрания завершены. Итоги и отчетность сохранены в архиве."}
+                  </p>
+                </div>
+              </div>
+              <Link 
+                href="/app/polls" 
+                className="shrink-0 text-xs font-bold text-primary hover:underline"
+              >
+                {language === "kk" ? "Нәтижелер →" : language === "en" ? "View Archive →" : "Итоги →"}
+              </Link>
+            </div>
+          </Card>
+        )}
+      </div>
 
       <div className="grid gap-3">
         <div className="flex items-baseline justify-between">
           <h2 className="m-0 flex items-center gap-1.5 text-base font-bold">
-            <HomeIcon aria-hidden size={16} className="text-muted-foreground" /> Новости дома
+            <HomeIcon aria-hidden size={16} className="text-muted-foreground" /> {t("label_building_news")}
           </h2>
           <Link href="/app/news" className="text-sm font-semibold text-primary no-underline">
-            Все
+            {t("label_all_link")}
           </Link>
         </div>
         {recentAnnouncements.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Объявлений пока нет.</p>
+          <p className="text-sm text-muted-foreground">{t("label_no_announcements")}</p>
         ) : (
           <ul className="m-0 grid list-none gap-3 p-0">
             {recentAnnouncements.map((a) => (
@@ -465,9 +532,9 @@ async function ResidentView({ osiId, userId }: { osiId: string; userId: string }
       {recentRequests.length > 0 && (
         <div className="grid gap-3">
           <div className="flex items-baseline justify-between">
-            <h2 className="m-0 text-base font-bold">Мои заявки</h2>
+            <h2 className="m-0 text-base font-bold">{t("label_my_requests")}</h2>
             <Link href="/app/requests" className="text-sm font-semibold text-primary no-underline">
-              Все
+              {t("label_all_link")}
             </Link>
           </div>
           <ul className="m-0 grid list-none gap-3 p-0">

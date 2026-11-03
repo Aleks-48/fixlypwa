@@ -1,11 +1,11 @@
-import type { NotificationType } from "@prisma/client";
+import { requestCategoryLabels,requestStatusLabels } from "@/lib/comms/labels";
 import { prisma } from "@/lib/db/prisma";
 import { forTenant } from "@/lib/db/tenant";
-import { requestCategoryLabels, requestStatusLabels } from "@/lib/comms/labels";
-import { reportPeriodLabel } from "@/lib/finance/periodLabel";
 import { publish } from "@/lib/events/bus";
-import { sendPushToMany } from "./push";
+import { reportPeriodLabel } from "@/lib/finance/periodLabel";
+import type { NotificationType } from "@prisma/client";
 import { sendFcmToMany } from "./fcm";
+import { sendPushToMany } from "./push";
 
 // In-app центр уведомлений (REQ-100/101) + запуск Web Push (REQ-105: в push уходит только
 // type+id, текст — здесь, в нашей БД под RLS). Триггеры вызываются из comms/service.ts.
@@ -87,6 +87,29 @@ async function chairmenOfOsi(osiId: string): Promise<string[]> {
     select: { userId: true },
   });
   return roles.map((r) => r.userId);
+}
+
+// Все мастера города = Master (APPROVED, identity-таблица)
+export async function mastersOfCity(city: string): Promise<string[]> {
+  const masters = await prisma.master.findMany({
+    where: { city, status: "APPROVED" },
+    select: { userId: true },
+  });
+  return masters.map((m) => m.userId);
+}
+
+export async function notifyMastersNewListing(city: string, listingId: string, _title: string): Promise<void> {
+  const userIds = await mastersOfCity(city);
+  if (userIds.length === 0) return;
+
+  for (const userId of userIds) {
+    publish(userId, {
+      type: "MARKET_LISTING_CREATED",
+      notificationId: listingId,
+      entityType: "MarketListing",
+      entityId: listingId,
+    });
+  }
 }
 
 // Жители конкретных квартир, сгруппированные по apartmentId (REQ-106: точечное уведомление

@@ -195,3 +195,374 @@
     box-shadow: none;
   }
 }
+
+/* =====================================================================================
+ * RateMasterCard — оценка мастера (Kaspi/Яндекс стиль)
+ * ===================================================================================== */
+.rate-card {
+  background: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rate-card--done {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--success);
+  font-weight: 600;
+}
+
+.rate-card__check {
+  font-size: 20px;
+}
+
+.rate-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rate-card__icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.rate-card__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.rate-card__sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.rate-card__stars {
+  display: flex;
+  gap: 4px;
+}
+
+.rate-card__star {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 28px;
+  color: var(--border);
+  transition: color 0.12s ease, transform 0.1s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.rate-card__star--active {
+  color: #f59e0b;
+}
+
+.rate-card__star:hover {
+  transform: scale(1.15);
+}
+
+.rate-card__textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  background: var(--background);
+  color: var(--foreground);
+  resize: none;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.rate-card__textarea:focus {
+  border-color: var(--primary);
+}
+
+.rate-card__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--destructive);
+}
+
+.rate-card__btn {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.rate-card__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* =====================================================================================
+ * MasterSelect — дропдаун назначения мастера
+ * ===================================================================================== */
+.master-select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.master-select__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.master-select__dropdown {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  background: var(--background);
+  color: var(--foreground);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.master-select__dropdown:focus {
+  border-color: var(--primary);
+}
+
+.master-select__contacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.master-select__contact-link {
+  font-size: 12px;
+  color: var(--primary);
+  text-decoration: none;
+  border: 1px solid var(--primary);
+  border-radius: 20px;
+  padding: 3px 10px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.master-select__contact-link:hover {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* =====================================================================================
+ * AddMasterDialog — диалог добавления мастера из контактов
+ * ===================================================================================== */
+.add-master-btn {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.add-master-btn:hover {
+  opacity: 0.88;
+}
+
+.add-master-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (min-width: 640px) {
+  .add-master-overlay {
+    align-items: center;
+  }
+}
+
+.add-master-dialog {
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90dvh;
+  overflow-y: auto;
+  box-shadow: 0 -4px 32px rgba(0, 0, 0, 0.18);
+}
+
+@media (min-width: 640px) {
+  .add-master-dialog {
+    border-radius: 20px;
+  }
+}
+
+.add-master-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 0;
+}
+
+.add-master-dialog__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.add-master-dialog__close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  padding: 4px;
+}
+
+.add-master-dialog__success {
+  padding: 32px 20px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--success);
+}
+
+.add-master-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px 24px;
+}
+
+.add-master-dialog__contacts-btn {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s;
+}
+
+.add-master-dialog__contacts-btn:hover {
+  background: var(--accent);
+}
+
+.add-master-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.add-master-dialog__field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.add-master-dialog__field input,
+.add-master-dialog__field textarea {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 14px;
+  background: var(--background);
+  color: var(--foreground);
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.add-master-dialog__field input:focus,
+.add-master-dialog__field textarea:focus {
+  border-color: var(--primary);
+}
+
+.add-master-dialog__contact-links {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.add-master-dialog__contact-links a {
+  font-size: 20px;
+  text-decoration: none;
+  transition: transform 0.1s;
+}
+
+.add-master-dialog__contact-links a:hover {
+  transform: scale(1.15);
+}
+
+.add-master-dialog__cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.add-master-dialog__cat-chip {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 13px;
+  background: var(--background);
+  color: var(--foreground);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.add-master-dialog__cat-chip--active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+
+.add-master-dialog__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--destructive);
+}
+
+.add-master-dialog__submit {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  width: 100%;
+}
+
+.add-master-dialog__submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

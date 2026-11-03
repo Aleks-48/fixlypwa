@@ -23,7 +23,8 @@ void main() async {
   await dotenv.load(fileName: ".env");
 
   await Future.wait([
-    Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
+    if (dotenv.env['ENABLE_PUSH'] != 'false')
+      Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
     SharedPreferences.getInstance().then((prefs) {
       final String? savedLang = prefs.getString('saved_lang');
       if (savedLang != null) {
@@ -33,7 +34,9 @@ void main() async {
     initializeDateFormatting('ru'),
   ]);
 
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  if (dotenv.env['ENABLE_PUSH'] != 'false') {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  }
 
   runApp(
     ChangeNotifierProvider(

@@ -99,7 +99,7 @@ describe("telegram.ts — транспорт и обработчик апдей�
 
     const { handleTelegramUpdate } = await import("./telegram");
     await handleTelegramUpdate({
-      message: { chat: { id: 42 }, contact: { phone_number: "77011234567" } },
+      message: { chat: { id: 42, type: "private" }, from: { id: 42 }, contact: { phone_number: "77011234567", user_id: 42 } },
     });
 
     expect(upsertMock).toHaveBeenCalledWith({
@@ -117,7 +117,7 @@ describe("telegram.ts — транспорт и обработчик апдей�
 
     const { handleTelegramUpdate } = await import("./telegram");
     await handleTelegramUpdate({
-      message: { chat: { id: 42 }, contact: { phone_number: "123" } },
+      message: { chat: { id: 42, type: "private" }, from: { id: 42 }, contact: { phone_number: "123", user_id: 42 } },
     });
 
     expect(upsertMock).not.toHaveBeenCalled();

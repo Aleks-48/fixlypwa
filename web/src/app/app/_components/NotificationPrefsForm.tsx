@@ -1,7 +1,7 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import { useState } from "react";
-import { Loader2, CheckCircle2 } from "lucide-react";
 
 type Prefs = {
   announcements: boolean;

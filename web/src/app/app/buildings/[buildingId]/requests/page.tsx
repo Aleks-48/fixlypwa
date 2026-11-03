@@ -5,8 +5,9 @@ import { activeChairmanOsi } from "@/lib/auth/guards";
 import { getBuilding } from "@/lib/onboarding/service";
 import { listRequests } from "@/lib/comms/service";
 import { getListingsByRequestIds, listOffersWithMasters } from "@/lib/market/service";
-import { RequestCard } from "../../../_components/RequestCard";
-import { PageBody, PageHeader } from "../../../_components/PageHeader";
+import { getTranslation } from "@/lib/i18n/server";
+import { RequestCard } from "@/app/app/_components/RequestCard";
+import { PageBody, PageHeader } from "@/app/app/_components/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export default async function BuildingRequestsPage({
   const osiId = activeChairmanOsi(auth);
   if (!osiId) redirect("/app");
 
+  const { t } = await getTranslation();
   const { buildingId } = await params;
   const building = await getBuilding(osiId, buildingId);
   if (!building) notFound();
@@ -59,7 +61,7 @@ export default async function BuildingRequestsPage({
   return (
     <>
       <PageHeader
-        title="Заявки жителей"
+        title={t("title_chairman_requests")}
         subtitle={`${newCount} новых · ${inWork} в работе · ${requests.length - newCount - inWork} закрыто`}
         back={{ href: `/app/buildings/${buildingId}`, label: building.address }}
       />

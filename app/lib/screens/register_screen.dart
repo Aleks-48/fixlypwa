@@ -1,21 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 import 'package:fixly_app/theme/app_theme.dart';
 import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/core/auth_repository.dart';
+import 'package:fixly_app/core/app_localizations.dart';
+import 'package:fixly_app/main.dart' show appLanguage;
 import 'package:fixly_app/screens/home_router.dart';
 import 'package:fixly_app/screens/create_osi_screen.dart';
 import 'package:fixly_app/screens/master_application_screen.dart';
+import 'package:fixly_app/screens/legal_docs_sheet.dart';
 
-// Регистрация с выбором роли (onboarding-unified.md §0, срез R2 — запрос Рахима 2026-07-17:
-// «Регистрация с выбором роли: председатель, житель или мастер»). Технически — тот же
-// единственный аккаунт, что и «Вход» (auth-email.md §3, первый код сам создаёт пользователя):
-// разница только в собираемых полях (роль + ФИО) и в шаге ПОСЛЕ кода — куда ведём дальше
-// определяет выбранная роль, не хранимое серверное состояние (сервер роль не назначает по
-// этому выбору — она возникает из действия: создал ОСИ / привязан председателем / анкета
-// одобрена, REQ-137/138).
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -27,15 +23,19 @@ enum _Step { role, form, code }
 
 class _Role {
   final String value;
-  final String label;
+  final String labelRu;
+  final String labelKk;
+  final String labelEn;
   final IconData icon;
-  const _Role(this.value, this.label, this.icon);
+  const _Role(this.value, this.labelRu, this.labelKk, this.labelEn, this.icon);
+
+  String getLabel(String lang) => lang == 'en' ? labelEn : (lang == 'kk' ? labelKk : labelRu);
 }
 
 const _roles = [
-  _Role('RESIDENT', 'Житель', LucideIcons.home),
-  _Role('CHAIRMAN', 'Председатель', LucideIcons.building2),
-  _Role('MASTER', 'Мастер', LucideIcons.wrench),
+  _Role('RESIDENT', 'Житель', 'Тұрғын', 'Resident', LucideIcons.home),
+  _Role('CHAIRMAN', 'Председатель', 'Төраға', 'OSI Chairman', LucideIcons.building2),
+  _Role('MASTER', 'Мастер', 'Шебер', 'Master / Specialist', LucideIcons.wrench),
 ];
 
 class _RegisterScreenState extends State<RegisterScreen> {
@@ -88,7 +88,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'Ошибка подключения');
+      setState(() => _error = AppLocalizations.tr('status_error'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -108,9 +108,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final user = await AuthRepository.instance.verifyOtp(_identifier, code, fullName: _fullName);
       if (!mounted) return;
 
-      // Куда ведём ПОСЛЕ кода — по роли, выбранной на этом экране (REQ-137). Роли пользователя
-      // на сервере (user.roles) в этот момент всё ещё пустые — они появятся из следующего
-      // действия (создание ОСИ / привязка председателем / одобрение анкеты).
       switch (_selectedRole) {
         case 'CHAIRMAN':
           Navigator.pushAndRemoveUntil(
@@ -126,7 +123,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             (_) => false,
           );
           break;
-        default: // RESIDENT
+        default:
           Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(builder: (_) => HomeRouter(user: user)),
@@ -136,7 +133,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'Ошибка подключения');
+      setState(() => _error = AppLocalizations.tr('status_error'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -145,36 +142,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    return Scaffold(
-      backgroundColor: c.background,
-      appBar: AppBar(
-        backgroundColor: c.background,
-        elevation: 0,
-        iconTheme: IconThemeData(color: c.textPrimary),
-        title: Text('Регистрация', style: TextStyle(color: c.textPrimary)),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppDimens.spaceLg),
-          child: switch (_step) {
-            _Step.role => _roleStep(c),
-            _Step.form => _formStep(c),
-            _Step.code => _codeStep(c),
-          },
-        ),
-      ),
+    return ValueListenableBuilder<String>(
+      valueListenable: appLanguage,
+      builder: (context, lang, _) {
+        return Scaffold(
+          backgroundColor: c.background,
+          appBar: AppBar(
+            backgroundColor: c.background,
+            elevation: 0,
+            iconTheme: IconThemeData(color: c.textPrimary),
+            title: Text(AppLocalizations.tr('title_register'), style: TextStyle(color: c.textPrimary)),
+          ),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppDimens.spaceLg),
+              child: switch (_step) {
+                _Step.role => _roleStep(lang, c),
+                _Step.form => _formStep(lang, c),
+                _Step.code => _codeStep(lang, c),
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _roleStep(AppColors c) {
+  Widget _roleStep(String lang, AppColors c) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Кто вы?',
+        Text(AppLocalizations.tr('label_role'),
             style: TextStyle(
-                color: c.textPrimary, fontSize: 26, fontWeight: AppTypography.extraBold)),
+                color: c.textPrimary, fontSize: 24, fontWeight: AppTypography.extraBold)),
         const SizedBox(height: 8),
-        Text('Выберите роль — от неё зависит следующий шаг',
+        Text(lang == 'en'
+            ? 'Select a role — the next step depends on it'
+            : (lang == 'kk' ? 'Рөлді таңдаңыз — келесі қадам оған байланысты' : 'Выберите роль — от неё зависит следующий шаг'),
             style: TextStyle(color: c.textSecondary, fontSize: AppTypography.body)),
         const SizedBox(height: AppDimens.spaceLg),
         for (final r in _roles)
@@ -203,7 +207,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     const SizedBox(width: AppDimens.spaceMd),
                     Expanded(
-                      child: Text(r.label,
+                      child: Text(r.getLabel(lang),
                           style: TextStyle(
                               color: c.textPrimary,
                               fontSize: AppTypography.bodyLarge,
@@ -219,8 +223,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _formStep(AppColors c) {
-    final roleLabel = _roles.firstWhere((r) => r.value == _selectedRole).label;
+  Widget _formStep(String lang, AppColors c) {
+    final roleLabel = _roles.firstWhere((r) => r.value == _selectedRole).getLabel(lang);
     return Form(
       key: _formKey,
       child: Column(
@@ -229,140 +233,178 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextButton.icon(
             onPressed: () => setState(() => _step = _Step.role),
             icon: Icon(Icons.arrow_back, size: 16, color: c.textSecondary),
-            label: Text('$roleLabel — изменить', style: TextStyle(color: c.textSecondary)),
+            label: Text('$roleLabel — ${lang == 'en' ? 'change' : (lang == 'kk' ? 'өзгерту' : 'изменить')}', style: TextStyle(color: c.textSecondary)),
             style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
           ),
           const SizedBox(height: AppDimens.spaceMd),
-          Text('Ваши данные',
+          Text(lang == 'en' ? 'Your Information' : (lang == 'kk' ? 'Сіздің деректеріңіз' : 'Ваши данные'),
               style: TextStyle(
                   color: c.textPrimary, fontSize: 24, fontWeight: AppTypography.extraBold)),
           const SizedBox(height: AppDimens.spaceLg),
           _field(
             c: c,
             controller: _fullNameCtrl,
-            label: 'ФИО',
-            hint: 'Иванов Иван Иванович',
+            label: AppLocalizations.tr('label_full_name'),
+            hint: AppLocalizations.tr('placeholder_full_name'),
             icon: LucideIcons.user,
             validator: (v) {
               final s = v?.trim() ?? '';
-              if (s.length < 2) return 'Укажите ФИО';
+              if (s.isEmpty) return lang == 'en' ? 'Enter full name' : (lang == 'kk' ? 'Т.А.Ә. енгізіңіз' : 'Укажите ФИО');
+              if (s.length < 2) return lang == 'en' ? 'Minimum 2 characters' : (lang == 'kk' ? 'Кемінде 2 таңба' : 'Минимум 2 символа');
               return null;
             },
           ),
-          const SizedBox(height: AppDimens.spaceSm),
+          const SizedBox(height: AppDimens.spaceMd),
           _field(
             c: c,
             controller: _identifierCtrl,
-            label: 'Телефон или email',
-            hint: '+7 7XX XXX XX XX / email@example.com',
-            icon: LucideIcons.atSign,
-            keyboard: TextInputType.emailAddress,
+            label: AppLocalizations.tr('label_phone'),
+            hint: AppLocalizations.tr('placeholder_phone'),
+            icon: LucideIcons.phone,
+            keyboardType: TextInputType.phone,
             validator: (v) {
               final s = v?.trim() ?? '';
-              if (s.isEmpty) return 'Укажите телефон или email';
-              final looksEmail = s.contains('@') && s.split('@').last.contains('.');
-              final looksPhone = s.replaceAll(RegExp(r'\D'), '').length >= 10;
-              if (!looksEmail && !looksPhone) return 'Некорректный телефон или email';
+              if (s.isEmpty) return lang == 'en' ? 'Enter phone number' : (lang == 'kk' ? 'Телефонды енгізіңіз' : 'Укажите телефон');
               return null;
             },
           ),
-          _telegramBotHint(c),
           if (_error != null) ...[
             const SizedBox(height: AppDimens.spaceSm),
-            Text(_error!, style: TextStyle(color: c.danger)),
+            Text(_error!, style: TextStyle(color: c.danger, fontSize: AppTypography.caption)),
           ],
           const SizedBox(height: AppDimens.spaceLg),
-          _submitButton(c, label: 'Получить код', onPressed: _isLoading ? null : _requestCode),
+          SizedBox(
+            width: double.infinity,
+            height: AppDimens.primaryTapTarget,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _requestCode,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: c.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.radiusMd)),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Text(AppLocalizations.tr('btn_continue'),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: AppTypography.bold,
+                          fontSize: AppTypography.button)),
+            ),
+          ),
+          const SizedBox(height: AppDimens.spaceMd),
+          GestureDetector(
+            onTap: () {
+              final tab = switch (_selectedRole) {
+                'CHAIRMAN' => LegalDocTab.chairman,
+                'MASTER' => LegalDocTab.master,
+                _ => LegalDocTab.resident,
+              };
+              LegalDocsSheet.show(context, initialTab: tab);
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text.rich(
+                TextSpan(
+                  text: lang == 'en'
+                      ? 'By clicking "Continue", you agree to the '
+                      : (lang == 'kk'
+                          ? '«Жалғастыру» батырмасын басу арқылы сіз '
+                          : 'Нажимая «Продолжить», вы принимаете условия '),
+                  style: TextStyle(color: c.textTertiary, fontSize: 11, height: 1.35),
+                  children: [
+                    TextSpan(
+                      text: lang == 'en'
+                          ? 'Public Offer'
+                          : (lang == 'kk' ? 'Қоғамдық оферта' : 'Публичной оферты'),
+                      style: TextStyle(
+                        color: c.primary,
+                        fontWeight: FontWeight.bold,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                    TextSpan(
+                      text: lang == 'en' ? ' and ' : (lang == 'kk' ? ' және ' : ' и '),
+                    ),
+                    TextSpan(
+                      text: lang == 'en'
+                          ? 'Privacy Policy'
+                          : (lang == 'kk' ? 'Құпиялылық саясатымен' : 'Политики конфиденциальности'),
+                      style: TextStyle(
+                        color: c.primary,
+                        fontWeight: FontWeight.bold,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                    TextSpan(
+                      text: lang == 'en' ? '.' : (lang == 'kk' ? ' келісесіз.' : '.'),
+                    ),
+                  ],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // Постоянная ссылка на бота (REQ-009/telegram-otp.md, срез R2) — заранее открыв бота и нажав
-  // «Начать», житель получает код в Telegram мгновенно вместо ожидания SMS.
-  Widget _telegramBotHint(AppColors c) {
-    final username = dotenv.env['TELEGRAM_BOT_USERNAME'];
-    if (username == null || username.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: GestureDetector(
-        onTap: () => launchUrl(Uri.parse('https://t.me/$username'),
-            mode: LaunchMode.externalApplication),
-        child: RichText(
-          text: TextSpan(
-            text: 'Входите по телефону? Заранее откройте ',
-            style: TextStyle(color: c.textTertiary, fontSize: 12),
-            children: [
-              TextSpan(
-                text: 'Telegram-бота',
-                style: TextStyle(color: c.primary, fontWeight: FontWeight.w600),
-              ),
-              const TextSpan(text: ' и нажмите «Начать» — код придёт мгновенно.'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _codeStep(AppColors c) {
+  Widget _codeStep(String lang, AppColors c) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Код подтверждения',
-            style: TextStyle(color: c.textPrimary, fontSize: 24, fontWeight: AppTypography.extraBold)),
+        Text(lang == 'en' ? 'Enter Code' : (lang == 'kk' ? 'Кодты енгізіңіз' : 'Введите код'),
+            style: TextStyle(
+                color: c.textPrimary, fontSize: 24, fontWeight: AppTypography.extraBold)),
         const SizedBox(height: 8),
-        Text('Отправлен на $_identifier', style: TextStyle(color: c.textSecondary)),
+        Text('${AppLocalizations.tr('code_sent_notice')}: $_identifier',
+            style: TextStyle(color: c.textSecondary, fontSize: AppTypography.body)),
         const SizedBox(height: AppDimens.spaceLg),
         _field(
           c: c,
           controller: _codeCtrl,
-          label: 'Код из письма/SMS',
-          hint: '000000',
+          label: AppLocalizations.tr('label_enter_code'),
+          hint: '123456',
           icon: LucideIcons.keyRound,
-          keyboard: TextInputType.number,
+          keyboardType: TextInputType.number,
         ),
-        if (_devCode != null) ...[
+        if (_devCode != null && dotenv.env['OTP_DEV_ECHO'] == '1') ...[
           const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: c.primary.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text('Код (dev): $_devCode', style: TextStyle(color: c.primaryLight)),
-          ),
+          Text(' Dev OTP: $_devCode',
+              style: TextStyle(color: c.warning, fontSize: AppTypography.caption, fontWeight: FontWeight.bold)),
         ],
         if (_error != null) ...[
           const SizedBox(height: AppDimens.spaceSm),
-          Text(_error!, style: TextStyle(color: c.danger)),
+          Text(_error!, style: TextStyle(color: c.danger, fontSize: AppTypography.caption)),
         ],
         const SizedBox(height: AppDimens.spaceLg),
-        _submitButton(c, label: 'Подтвердить', onPressed: _isLoading ? null : _verifyAndRoute),
-      ],
-    );
-  }
-
-  Widget _submitButton(AppColors c, {required String label, required VoidCallback? onPressed}) {
-    return SizedBox(
-      width: double.infinity,
-      height: AppDimens.primaryTapTarget,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: c.primary,
-          disabledBackgroundColor: c.primary.withOpacity(0.5),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.radiusMd)),
+        SizedBox(
+          width: double.infinity,
+          height: AppDimens.primaryTapTarget,
+          child: ElevatedButton(
+            onPressed: _isLoading ? null : _verifyAndRoute,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: c.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.radiusMd)),
+            ),
+            child: _isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : Text(AppLocalizations.tr('btn_verify_code'),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: AppTypography.bold,
+                        fontSize: AppTypography.button)),
+          ),
         ),
-        child: _isLoading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-              )
-            : Text(label,
-                style: const TextStyle(color: Colors.white, fontWeight: AppTypography.bold)),
-      ),
+      ],
     );
   }
 
@@ -372,36 +414,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required String label,
     required String hint,
     required IconData icon,
-    TextInputType keyboard = TextInputType.text,
+    TextInputType? keyboardType,
     String? Function(String?)? validator,
   }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboard,
-      validator: validator,
-      style: TextStyle(color: c.textPrimary),
-      cursorColor: c.primary,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        labelStyle: TextStyle(color: c.textTertiary),
-        prefixIcon: Icon(icon, color: c.primary, size: 19),
-        filled: true,
-        fillColor: c.surfaceVariant,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-          borderSide: BorderSide(color: c.cardBorder),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: TextStyle(
+                color: c.textPrimary,
+                fontSize: AppTypography.caption,
+                fontWeight: AppTypography.semibold)),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          validator: validator,
+          style: TextStyle(color: c.textPrimary, fontSize: AppTypography.bodyLarge),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(color: c.textTertiary),
+            prefixIcon: Icon(icon, size: 20, color: c.textSecondary),
+            filled: true,
+            fillColor: c.card,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+              borderSide: BorderSide(color: c.cardBorder),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+              borderSide: BorderSide(color: c.cardBorder),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+              borderSide: BorderSide(color: c.primary, width: 2),
+            ),
+          ),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-          borderSide: BorderSide(color: c.cardBorder),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-          borderSide: BorderSide(color: c.primary, width: 1.5),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      ),
+      ],
     );
   }
 }

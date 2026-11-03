@@ -8,6 +8,8 @@ import { ThemeToggle } from "@/app/app/_components/ThemeToggle";
 import { RegisterCodeForm } from "@/app/login/LoginForm";
 import { MasterRegisterForm } from "./MasterRegisterForm";
 
+import { LanguageToggle } from "@/app/app/_components/LanguageToggle";
+
 type RoleCard = "resident" | "chairman" | "master";
 
 // Регистрация (REQ-007, auth-email.md §3). Все три карточки реальные: житель/председатель —
@@ -19,7 +21,8 @@ export function RegisterView({ initialRole }: { initialRole: RoleCard }) {
 
   return (
     <main className="relative flex min-h-dvh">
-      <div className="absolute right-4 top-4 z-10">
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
       <section className="hidden w-[40%] flex-col justify-between bg-primary p-12 text-primary-foreground lg:flex">

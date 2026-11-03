@@ -1,6 +1,15 @@
+// lib/screens/chairman_analytics_screen.dart
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/theme/app_theme.dart';
+import 'package:fixly_app/core/analytics_repository.dart';
+import 'package:fixly_app/core/request_labels.dart';
+import 'package:fixly_app/core/app_localizations.dart';
+
+
+// =============================================================================
+//  Аналитика председателя — реальные данные из /api/analytics/chairman
+// =============================================================================
 
 class ChairmanAnalyticsScreen extends StatefulWidget {
   const ChairmanAnalyticsScreen({super.key});
@@ -10,8 +19,39 @@ class ChairmanAnalyticsScreen extends StatefulWidget {
 }
 
 class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
-  String _selectedPeriod = 'За месяц';
-  final List<String> _periods = ['За месяц', 'За квартал', 'За год'];
+  // month | quarter | year
+  String _period = 'month';
+  ChairmanAnalytics? _data;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final data = await AnalyticsRepository.instance
+          .getChairmanAnalytics(period: _period);
+      if (mounted) setState(() => _data = data);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _selectPeriod(String period) {
+    if (_period == period) return;
+    setState(() => _period = period);
+    _load();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +61,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       backgroundColor: c.background,
       appBar: AppBar(
         title: Text(
-          'Аналитика',
+          AppLocalizations.tr('chairman_analytics'),
           style: TextStyle(
             color: c.textPrimary,
             fontWeight: AppTypography.bold,
@@ -31,44 +71,143 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         iconTheme: IconThemeData(color: c.textPrimary),
+        actions: [
+          if (!_loading)
+            IconButton(
+              icon: Icon(LucideIcons.refreshCw, color: c.textSecondary, size: 18),
+              onPressed: _load,
+              tooltip: AppLocalizations.tr('btn_refresh'),
+            ),
+        ],
       ),
-      body: SingleChildScrollView(
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? _buildError(c)
+                : _buildContent(c),
+      ),
+    );
+  }
+
+  Widget _buildError(AppColors c) {
+    return Center(
+      child: Padding(
         padding: const EdgeInsets.all(AppDimens.spaceLg),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Переключатель периода
-            _buildPeriodSelector(c),
-            const SizedBox(height: AppDimens.spaceLg),
-
-            // Финансовая аналитика
-            _buildSectionHeader(c, 'Финансовый срез'),
+            Icon(LucideIcons.alertCircle, color: c.danger, size: 40),
+            const SizedBox(height: AppDimens.spaceMd),
+            Text(
+              AppLocalizations.tr('status_error'),
+              style: TextStyle(color: c.danger, fontWeight: AppTypography.bold),
+            ),
             const SizedBox(height: AppDimens.spaceSm),
-            _buildFinanceCard(c),
+            Text(
+              _error ?? '',
+              style: TextStyle(color: c.textSecondary, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: AppDimens.spaceLg),
-
-            // Статистика по заявкам
-            _buildSectionHeader(c, 'Заявки и исполнение'),
-            const SizedBox(height: AppDimens.spaceSm),
-            _buildRequestsGrid(c),
-            const SizedBox(height: AppDimens.spaceLg),
-
-            // Категории
-            _buildSectionHeader(c, 'Распределение по категориям'),
-            const SizedBox(height: AppDimens.spaceSm),
-            _buildCategoriesCard(c),
-            const SizedBox(height: AppDimens.spaceLg),
-
-            // Голосования
-            _buildSectionHeader(c, 'Голосования и кворум'),
-            const SizedBox(height: AppDimens.spaceSm),
-            _buildVotingCard(c),
-            const SizedBox(height: AppDimens.spaceXl),
+            ElevatedButton.icon(
+              onPressed: _load,
+              icon: const Icon(LucideIcons.refreshCw, size: 16),
+              label: Text(AppLocalizations.tr('btn_retry')),
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildContent(AppColors c) {
+    final d = _data;
+    if (d == null) return const SizedBox.shrink();
+
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(AppDimens.spaceLg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPeriodSelector(c),
+          const SizedBox(height: AppDimens.spaceLg),
+          _buildSectionHeader(c, AppLocalizations.tr('analytics_finance_section')),
+          const SizedBox(height: AppDimens.spaceSm),
+          _buildFinanceCard(c, d.finance),
+          const SizedBox(height: AppDimens.spaceLg),
+          _buildSectionHeader(c, AppLocalizations.tr('analytics_requests_section')),
+          const SizedBox(height: AppDimens.spaceSm),
+          _buildRequestsGrid(c, d.requests),
+          const SizedBox(height: AppDimens.spaceLg),
+          if (d.requests.byCategory.isNotEmpty) ...[   
+            _buildSectionHeader(c, AppLocalizations.tr('analytics_categories_section')),
+            const SizedBox(height: AppDimens.spaceSm),
+            _buildCategoriesCard(c, d.requests),
+            const SizedBox(height: AppDimens.spaceLg),
+          ],
+          _buildSectionHeader(c, AppLocalizations.tr('analytics_polls_section')),
+          const SizedBox(height: AppDimens.spaceSm),
+          _buildPollsCard(c, d.polls),
+          const SizedBox(height: AppDimens.spaceXl),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Period selector
+  // ---------------------------------------------------------------------------
+
+  Widget _buildPeriodSelector(AppColors c) {
+    final periods = [
+      ('month', AppLocalizations.tr('analytics_period_month')),
+      ('quarter', AppLocalizations.tr('analytics_period_quarter')),
+      ('year', AppLocalizations.tr('analytics_period_year')),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(AppDimens.radiusLg),
+        border: Border.all(color: c.cardBorder),
+      ),
+      child: Row(
+        children: periods.map((pair) {
+          final isSelected = _period == pair.$1;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => _selectPeriod(pair.$1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? c.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  pair.$2,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : c.textSecondary,
+                    fontWeight:
+                        isSelected ? AppTypography.bold : AppTypography.medium,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Section header
+  // ---------------------------------------------------------------------------
 
   Widget _buildSectionHeader(AppColors c, String title) {
     return Text(
@@ -81,48 +220,13 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  Widget _buildPeriodSelector(AppColors c) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: c.card,
-        borderRadius: BorderRadius.circular(AppDimens.radiusLg),
-        border: Border.all(color: c.cardBorder),
-      ),
-      child: Row(
-        children: _periods.map((period) {
-          final isSelected = _selectedPeriod == period;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _selectedPeriod = period),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected ? c.primary : Colors.transparent,
-                  borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  period,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : c.textSecondary,
-                    fontWeight: isSelected ? AppTypography.bold : AppTypography.medium,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
+  // ---------------------------------------------------------------------------
+  // Finance card
+  // ---------------------------------------------------------------------------
 
-  Widget _buildFinanceCard(AppColors c) {
-    const double collected = 1280000;
-    const double totalTarget = 1500000;
-    const double progress = collected / totalTarget;
+  Widget _buildFinanceCard(AppColors c, FinanceStats f) {
+    final pct = f.progressPct / 100.0;
+    final pctStr = '${f.progressPct}%';
 
     return Container(
       padding: const EdgeInsets.all(AppDimens.spaceLg),
@@ -134,6 +238,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Заголовок строки + badge
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -142,14 +247,15 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.12),
+                      color: Colors.green.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(AppDimens.radiusSm),
                     ),
-                    child: const Icon(LucideIcons.wallet, color: Colors.green, size: 20),
+                    child:
+                        const Icon(LucideIcons.wallet, color: Colors.green, size: 20),
                   ),
                   const SizedBox(width: AppDimens.spaceSm),
                   Text(
-                    'Сбор целевых взносов',
+                    AppLocalizations.tr('analytics_collection_rate'),
                     style: TextStyle(
                       color: c.textSecondary,
                       fontWeight: AppTypography.medium,
@@ -159,14 +265,15 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                 ],
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.12),
+                  color: Colors.green.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Text(
-                  '85.3%',
-                  style: TextStyle(
+                child: Text(
+                  pctStr,
+                  style: const TextStyle(
                     color: Colors.green,
                     fontWeight: AppTypography.bold,
                     fontSize: 12,
@@ -176,8 +283,9 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
             ],
           ),
           const SizedBox(height: AppDimens.spaceLg),
+          // Сумма оплаченного
           Text(
-            '1 280 000 ₸',
+            '${_fmt(f.totalPaid)} ₸',
             style: TextStyle(
               fontSize: 26,
               fontWeight: AppTypography.bold,
@@ -186,33 +294,36 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           ),
           const SizedBox(height: 2),
           Text(
-            'из запланированных 1 500 000 ₸',
+            '${AppLocalizations.tr('analytics_of_charged')} ${_fmt(f.totalCharged)} ₸',
             style: TextStyle(fontSize: 13, color: c.textSecondary),
           ),
           const SizedBox(height: AppDimens.spaceLg),
+          // Прогресс-бар
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
-              value: progress,
+              value: pct,
               minHeight: 8,
               backgroundColor: c.cardBorder,
-              color: Colors.green,
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
             ),
           ),
           const SizedBox(height: AppDimens.spaceLg),
           Divider(height: 1, color: c.cardBorder),
           const SizedBox(height: AppDimens.spaceLg),
+          // Долг + квартиры с долгом
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Задолженность', style: TextStyle(fontSize: 12, color: c.textSecondary)),
+                  Text(AppLocalizations.tr('analytics_total_debt'),
+                      style: TextStyle(fontSize: 12, color: c.textSecondary)),
                   const SizedBox(height: 2),
-                  const Text(
-                    '220 000 ₸',
-                    style: TextStyle(
+                  Text(
+                    '${_fmt(f.totalDebt)} ₸',
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: AppTypography.bold,
                       color: Colors.redAccent,
@@ -220,21 +331,24 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                   ),
                 ],
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('Квартир с долгом', style: TextStyle(fontSize: 12, color: c.textSecondary)),
-                  const SizedBox(height: 2),
-                  Text(
-                    '14 из 120',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: AppTypography.bold,
-                      color: c.textPrimary,
+              if (f.apartmentsTotal > 0)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(AppLocalizations.tr('analytics_apts_with_debt'),
+                        style:
+                            TextStyle(fontSize: 12, color: c.textSecondary)),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${f.apartmentsWithDebt} ${AppLocalizations.tr('analytics_of')} ${f.apartmentsTotal}',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: AppTypography.bold,
+                        color: c.textPrimary,
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
             ],
           ),
         ],
@@ -242,7 +356,15 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  Widget _buildRequestsGrid(AppColors c) {
+  // ---------------------------------------------------------------------------
+  // Requests grid
+  // ---------------------------------------------------------------------------
+
+  Widget _buildRequestsGrid(AppColors c, RequestsStats r) {
+    final resolvedPct = r.total > 0
+        ? '${(r.resolved / r.total * 100).round()}%'
+        : '—';
+
     return Column(
       children: [
         Row(
@@ -250,19 +372,20 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
             Expanded(
               child: _buildMetricTile(
                 c,
-                title: 'Всего заявок',
-                value: '48',
+                title: AppLocalizations.tr('analytics_total_requests'),
+                value: '${r.total}',
                 icon: LucideIcons.clipboardList,
-                iconColor: Colors.blue,
+                iconColor: c.primary,
               ),
             ),
             const SizedBox(width: AppDimens.spaceMd),
             Expanded(
               child: _buildMetricTile(
                 c,
-                title: 'Выполнено',
-                value: '42',
-                subtitle: '87% вовремя',
+                title: AppLocalizations.tr('analytics_completed'),
+                value: '${r.resolved}',
+                subtitle: r.total > 0 ? resolvedPct : null,
+                subtitleColor: Colors.green,
                 icon: LucideIcons.checkCircle2,
                 iconColor: Colors.green,
               ),
@@ -275,8 +398,8 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
             Expanded(
               child: _buildMetricTile(
                 c,
-                title: 'В работе',
-                value: '6',
+                title: AppLocalizations.tr('analytics_in_progress'),
+                value: '${r.inProgress}',
                 icon: LucideIcons.clock,
                 iconColor: Colors.orange,
               ),
@@ -285,10 +408,10 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
             Expanded(
               child: _buildMetricTile(
                 c,
-                title: 'Ср. время решения',
-                value: '3.2 ч.',
-                icon: LucideIcons.timer,
-                iconColor: Colors.purple,
+                title: AppLocalizations.tr('analytics_new_requests'),
+                value: '${r.received}',
+                icon: LucideIcons.alertCircle,
+                iconColor: Colors.redAccent,
               ),
             ),
           ],
@@ -302,6 +425,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     required String title,
     required String value,
     String? subtitle,
+    Color? subtitleColor,
     required IconData icon,
     required Color iconColor,
   }) {
@@ -318,7 +442,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.12),
+              color: iconColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(AppDimens.radiusSm),
             ),
             child: Icon(icon, color: iconColor, size: 18),
@@ -347,7 +471,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               subtitle,
               style: TextStyle(
                 fontSize: 11,
-                color: Colors.green,
+                color: subtitleColor ?? Colors.green,
                 fontWeight: AppTypography.medium,
               ),
             ),
@@ -357,13 +481,20 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  Widget _buildCategoriesCard(AppColors c) {
-    final categories = [
-      {'name': 'Сантехника и трубы', 'count': 18, 'pct': 0.38},
-      {'name': 'Домофон и Электрика', 'count': 14, 'pct': 0.29},
-      {'name': 'Уборка территории', 'count': 10, 'pct': 0.21},
-      {'name': 'Лифтовое оборудование', 'count': 6, 'pct': 0.12},
-    ];
+  // ---------------------------------------------------------------------------
+  // Categories card
+  // ---------------------------------------------------------------------------
+
+  Widget _buildCategoriesCard(AppColors c, RequestsStats r) {
+    final total = r.total;
+    // Сортируем по убыванию кол-ва
+    final sorted = requestCategoryOrder
+        .where((cat) => r.byCategory.containsKey(cat))
+        .map((cat) => MapEntry(cat, r.byCategory[cat]!))
+        .toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    if (sorted.isEmpty) return const SizedBox.shrink();
 
     return Container(
       padding: const EdgeInsets.all(AppDimens.spaceLg),
@@ -373,8 +504,9 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         border: Border.all(color: c.cardBorder),
       ),
       child: Column(
-        children: categories.map((cat) {
-          final double pct = cat['pct'] as double;
+        children: sorted.map((entry) {
+          final pct = total > 0 ? entry.value / total : 0.0;
+          final label = getRequestCategoryLabel(entry.key);
           return Padding(
             padding: const EdgeInsets.only(bottom: AppDimens.spaceMd),
             child: Column(
@@ -384,7 +516,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      cat['name'] as String,
+                      label,
                       style: TextStyle(
                         color: c.textPrimary,
                         fontWeight: AppTypography.medium,
@@ -392,7 +524,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                       ),
                     ),
                     Text(
-                      '${cat['count']} (${(pct * 100).toInt()}%)',
+                      '${entry.value} (${(pct * 100).round()}%)',
                       style: TextStyle(
                         color: c.textSecondary,
                         fontSize: 12,
@@ -408,7 +540,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                     value: pct,
                     minHeight: 6,
                     backgroundColor: c.cardBorder,
-                    color: c.primary,
+                    valueColor: AlwaysStoppedAnimation<Color>(c.primary),
                   ),
                 ),
               ],
@@ -419,7 +551,11 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  Widget _buildVotingCard(AppColors c) {
+  // ---------------------------------------------------------------------------
+  // Polls card
+  // ---------------------------------------------------------------------------
+
+  Widget _buildPollsCard(AppColors c, PollsStats p) {
     return Container(
       padding: const EdgeInsets.all(AppDimens.spaceLg),
       decoration: BoxDecoration(
@@ -432,7 +568,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.indigo.withOpacity(0.12),
+              color: Colors.indigo.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: const Icon(LucideIcons.vote, color: Colors.indigo, size: 22),
@@ -443,7 +579,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Участие в голосованиях',
+                  AppLocalizations.tr('analytics_active_polls'),
                   style: TextStyle(
                     color: c.textPrimary,
                     fontWeight: AppTypography.bold,
@@ -452,7 +588,9 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Средняя явка собственников — 68%',
+                  p.active == 0
+                      ? AppLocalizations.tr('analytics_no_active_polls')
+                      : '${p.active} ${AppLocalizations.tr('analytics_polls_count')}',
                   style: TextStyle(
                     color: c.textSecondary,
                     fontSize: 12,
@@ -461,8 +599,46 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               ],
             ),
           ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.indigo.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${p.active}',
+              style: const TextStyle(
+                color: Colors.indigo,
+                fontWeight: AppTypography.bold,
+                fontSize: 18,
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helper: format large numbers
+  // ---------------------------------------------------------------------------
+
+  String _fmt(double v) {
+    if (v == 0) return '0';
+    if (v >= 1000000) {
+      return '${(v / 1000000).toStringAsFixed(1)} млн';
+    }
+    if (v >= 1000) {
+      final s = v.round().toString();
+      // Группировка по 3 цифры: 1 280 000
+      final buf = StringBuffer();
+      final r = s.length % 3;
+      for (var i = 0; i < s.length; i++) {
+        if (i != 0 && (i - r) % 3 == 0) buf.write(' ');
+        buf.write(s[i]);
+      }
+      return buf.toString();
+    }
+    return v.round().toString();
   }
 }

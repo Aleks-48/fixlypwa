@@ -48,6 +48,7 @@ export async function PATCH(req: Request) {
   if (!osiId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = (await req.json()) as UpdateOsiInput & {
+    chairmanFullName?: string;
     // банковский счёт опционально
     bankAccount?: {
       id?: string;
@@ -64,6 +65,8 @@ export async function PATCH(req: Request) {
       bin: body.bin,
       address: body.address,
       registeredAt: body.registeredAt,
+      chairmanFullName: body.chairmanFullName,
+      userId: auth.user.id,
     }),
     body.bankAccount?.buildingId && body.bankAccount?.bankName && body.bankAccount?.accountNumber
       ? upsertBankAccount(osiId, {

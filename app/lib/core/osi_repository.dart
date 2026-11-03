@@ -18,13 +18,73 @@ class Building {
       );
 }
 
+class Occupant {
+  final String id;
+  final String fullName;
+  final String? phone;
+  final String? email;
+
+  Occupant({
+    required this.id,
+    required this.fullName,
+    this.phone,
+    this.email,
+  });
+
+  factory Occupant.fromJson(Map<String, dynamic> json) {
+    final user = json['user'] as Map<String, dynamic>?;
+    return Occupant(
+      id: json['id'] as String,
+      fullName: json['fullName'] as String,
+      phone: json['phone'] as String?,
+      email: user?['email'] as String?,
+    );
+  }
+}
+
 class Apartment {
   final String id;
   final String number;
-  Apartment({required this.id, required this.number});
+  final double? area;
+  final int? rooms;
+  final List<Occupant> occupants;
 
-  factory Apartment.fromJson(Map<String, dynamic> json) =>
-      Apartment(id: json['id'] as String, number: json['number'] as String);
+  Apartment({
+    required this.id,
+    required this.number,
+    this.area,
+    this.rooms,
+    this.occupants = const [],
+  });
+
+  factory Apartment.fromJson(Map<String, dynamic> json) {
+    final rawArea = json['area'];
+    double? parsedArea;
+    if (rawArea is num) {
+      parsedArea = rawArea.toDouble();
+    } else if (rawArea is String) {
+      parsedArea = double.tryParse(rawArea);
+    }
+
+    final rawRooms = json['rooms'];
+    int? parsedRooms;
+    if (rawRooms is num) {
+      parsedRooms = rawRooms.toInt();
+    } else if (rawRooms is String) {
+      parsedRooms = int.tryParse(rawRooms);
+    }
+
+    return Apartment(
+      id: json['id'] as String,
+      number: json['number'] as String,
+      area: parsedArea,
+      rooms: parsedRooms,
+      occupants: ((json['occupants'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>()
+          .map(Occupant.fromJson)
+          .toList(),
+    );
+  }
 }
 
 // Заявка на подключение к ОСИ (REQ-151..154, docs/specs/osi-join-request.md — портировано с
@@ -73,13 +133,14 @@ class PendingJoinRequest {
   PendingJoinRequest({required this.id, this.note, this.email, this.phone, this.fullName});
 
   factory PendingJoinRequest.fromJson(Map<String, dynamic> json) {
-    final user = json['user'] as Map<String, dynamic>;
+    final user = (json['user'] as Map<String, dynamic>?) ?? {};
+    final occupant = user['occupant'] as Map<String, dynamic>?;
     return PendingJoinRequest(
       id: json['id'] as String,
       note: json['note'] as String?,
       email: user['email'] as String?,
       phone: user['phone'] as String?,
-      fullName: user['fullName'] as String?,
+      fullName: occupant?['fullName'] as String? ?? user['fullName'] as String?,
     );
   }
 }

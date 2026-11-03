@@ -1,7 +1,7 @@
-import "server-only";
+import { forMaster } from "@/lib/db/master";
 import { prisma } from "@/lib/db/prisma";
 import { forTenant } from "@/lib/db/tenant";
-import { forMaster } from "@/lib/db/master";
+import "server-only";
 
 // Сервис маркетплейса заявок (ADR-0009, marketplace.md). Председатель работает через
 // forTenant (свой listing/офферы своей ОСИ); мастер — через forMaster (чужие тенанты не
@@ -33,9 +33,10 @@ export async function publishListing(osiId: string, requestId: string, input: Pu
   return forTenant(osiId, async (tx) => {
     const request = await tx.request.findUnique({
       where: { id: requestId },
-      select: { id: true, buildingId: true, category: true },
+      select: { id: true, buildingId: true, category: true, photoUrls: true },
     });
     if (!request) return null;
+    if (input.photoUrls.some(url => !request.photoUrls.includes(url))) return null;
 
     const building = await tx.building.findUnique({
       where: { id: request.buildingId },
@@ -46,7 +47,7 @@ export async function publishListing(osiId: string, requestId: string, input: Pu
     const existing = await tx.marketListing.findUnique({ where: { requestId } });
     if (existing?.status === "TAKEN") return null; // отклик уже принят — публиковать заново нельзя
 
-    return tx.marketListing.upsert({
+    const res = await tx.marketListing.upsert({
       where: { requestId },
       create: {
         osiId,
@@ -67,8 +68,15 @@ export async function publishListing(osiId: string, requestId: string, input: Pu
         closedAt: null,
       },
     });
+
+    const { notifyMastersNewListing } = await import("@/lib/notifications/service");
+    unawaited(notifyMastersNewListing(building.city, res.id, input.title).catch(() => null));
+
+    return res;
   });
 }
+
+function unawaited(_p: Promise<unknown>) {}
 
 // Снять с публикации (только пока не принят отклик — после TAKEN снимается автоматически acceptOffer).
 export function unpublishListing(osiId: string, listingId: string) {

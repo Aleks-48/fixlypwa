@@ -29,6 +29,14 @@ function corsHeaders(origin: string): Record<string, string> {
 }
 
 export function middleware(req: NextRequest) {
+  // ACCEPT-002: even legacy public/uploads URLs go through the authenticated handler.
+  if (req.nextUrl.pathname.startsWith("/uploads/")) {
+    const target = req.nextUrl.clone();
+    target.pathname = "/api/uploads/file/" + req.nextUrl.pathname.slice("/uploads/".length);
+    const response = NextResponse.rewrite(target);
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
   const origin = req.headers.get("origin");
   if (!origin || !allowedOrigins().has(origin)) return NextResponse.next();
 
@@ -40,4 +48,4 @@ export function middleware(req: NextRequest) {
   return res;
 }
 
-export const config = { matcher: "/api/:path*" };
+export const config = { matcher: ["/api/:path*", "/uploads/:path*"] };

@@ -1,8 +1,7 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
-// Единый формат ответа/ошибок (api-contracts.md §Соглашения): { data } / { error }.
-// Все route handlers обязаны отвечать в этом формате, чтобы фронт/будущий внешний API
-// имели один контракт.
+// Format for responses/errors: { data } / { error }
+// All route handlers must respond in this format.
 
 export type ApiError = {
   code: string;
@@ -23,21 +22,20 @@ export function fail(
   });
 }
 
-// IP клиента для rate-limit. Nginx проставляет X-Forwarded-For (docker/nginx/app.conf).
-// Берём первый адрес из цепочки. null — если заголовков нет (например, прямой доступ).
+// IP address of the client for rate-limit. Nginx sets X-Forwarded-For.
 export function clientIp(req: Request): string | null {
   const xff = req.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0]?.trim() ?? null;
   return req.headers.get("x-real-ip");
 }
 
-// Частые коды ошибок — не «магические строки» по всему коду.
+// Standard error responses
 export const Errors = {
-  unauthorized: () => fail("UNAUTHORIZED", "Требуется вход", 401),
-  forbidden: () => fail("FORBIDDEN", "Недостаточно прав", 403),
-  notFound: (what = "Ресурс") => fail("NOT_FOUND", `${what} не найден`, 404),
+  unauthorized: () => fail("UNAUTHORIZED", "Unauthorized", 401),
+  forbidden: (msg = "Access denied") => fail("FORBIDDEN", msg, 403),
+  notFound: (what = "Resource") => fail("NOT_FOUND", `${what} not found`, 404),
   validation: (message: string) => fail("VALIDATION", message, 422),
-  rateLimited: (message = "Слишком много запросов, попробуйте позже") =>
+  rateLimited: (message = "Too many requests, please try again later") =>
     fail("RATE_LIMITED", message, 429),
-  internal: () => fail("INTERNAL", "Внутренняя ошибка", 500),
+  internal: () => fail("INTERNAL", "Internal server error", 500),
 } as const;

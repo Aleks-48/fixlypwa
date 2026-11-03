@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Upload, CheckCircle2, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { CheckCircle2,FileSpreadsheet,RefreshCw,Upload } from 'lucide-react';
+import React,{ useEffect,useState } from 'react';
 
 interface BankImportItem {
   bankRef: string;
@@ -21,15 +21,28 @@ export default function BankImportPage() {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<BankImportItem[]>([]);
   const [commitSuccess, setCommitSuccess] = useState<string | null>(null);
+  const [buildings, setBuildings] = useState<{ id: string; address: string }[]>([]);
+  const [buildingId, setBuildingId] = useState('');
+  const [loadError, setLoadError] = useState('');
+  useEffect(() => {
+    let active = true;
+    fetch('/api/buildings').then(async (response) => {
+      if (!response.ok) throw new Error('Импорт доступен председателю ОСИ');
+      const result = await response.json();
+      if (active) setBuildings(result.data?.buildings ?? []);
+    }).catch((error: unknown) => { if (active) setLoadError(error instanceof Error ? error.message : 'Не удалось загрузить дома'); });
+    return () => { active = false; };
+  }, []);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
+    if (!file || !buildingId) return;
 
     setLoading(true);
     setCommitSuccess(null);
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('buildingId', buildingId);
 
     try {
       const res = await fetch('/api/bank-import', {
@@ -38,11 +51,11 @@ export default function BankImportPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Ошибка распознавания');
+      if (!res.ok) throw new Error(data.error?.message || 'Ошибка распознавания');
 
       setItems(data.items || []);
-    } catch (err: any) {
-      alert(err.message || 'Ошибка загрузки файла');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка загрузки файла');
     } finally {
       setLoading(false);
     }
@@ -58,15 +71,15 @@ export default function BankImportPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Ошибка проведения');
+      if (!res.ok) throw new Error(data.error?.message || 'Ошибка проведения');
 
       setCommitSuccess(
-        `Успешно проведено: ${data.paymentsCreated} платежей, ${data.expensesCreated} расходов. Пропущено дублей: ${data.skippedDuplicates}`
+        `Проведено: ${data.paymentsCreated} платежей, ${data.expensesCreated} расходов. Дубликатов: ${data.skippedDuplicates}. Не проведено (нужен ручной ввод): ${data.skippedUnmatched}`
       );
-      setItems([]);
+      setItems(items.filter((item) => !item.matchedAccountId && !item.isDuplicate));
       setFile(null);
-    } catch (err: any) {
-      alert(err.message || 'Ошибка проведения выписки');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Ошибка проведения выписки');
     } finally {
       setLoading(false);
     }
@@ -81,13 +94,21 @@ export default function BankImportPage() {
         <div>
           <h1 className="text-2xl font-bold">Импорт банковской выписки</h1>
           <p className="text-sm text-muted-foreground">
-            Автоматический разбор выписок Kaspi Pay, Halyk и 1С с сопоставлением платежей
+            Предпросмотр выписки и сопоставление платежей. Проверьте каждую строку перед сохранением.
           </p>
         </div>
       </div>
 
       {/* Форма загрузки */}
       <form onSubmit={handleUpload} className="p-6 bg-card border rounded-2xl shadow-sm space-y-4">
+        {loadError && <p role="alert">{loadError}</p>}
+        <label className="block text-sm font-medium">Дом
+          <select required value={buildingId} onChange={(event) => { setBuildingId(event.target.value); setItems([]); setCommitSuccess(null); }} className="block w-full border rounded-xl p-2 mt-2">
+            <option value="">Выберите дом</option>
+            {buildings.map((building) => <option key={building.id} value={building.id}>{building.address}</option>)}
+          </select>
+        </label>
+        <p className="text-sm text-muted-foreground">Несопоставленные поступления и расходы внесите вручную в разделе финансов. Они не будут проведены автоматически.</p>
         <div>
           <label className="block text-sm font-medium mb-2">
             Загрузите выписку (.xlsx, .csv, .txt 1С)
@@ -102,7 +123,7 @@ export default function BankImportPage() {
 
         <button
           type="submit"
-          disabled={!file || loading}
+          disabled={!file || !buildingId || loading}
           className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:opacity-90 disabled:opacity-50 transition-all"
         >
           {loading ? (

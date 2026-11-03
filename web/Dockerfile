@@ -34,7 +34,7 @@ COPY package.json package-lock.json tsconfig.json ./
 COPY prisma ./prisma
 COPY scripts ./scripts
 RUN npx prisma generate
-CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx scripts/db-bootstrap.ts"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx scripts/db-bootstrap.ts && npx tsx scripts/check-schema.ts"]
 
 # ---------- runner ----------
 FROM base AS runner
@@ -42,7 +42,7 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs
 
-# --chown обязателен: docker-compose монтирует именованный volume поверх public/uploads
+# --chown обязателен: docker-compose монтирует именованный volume поверх storage/uploads
 # (marketplace.md M3) — без него каталог достаётся рантайму (пользователь nextjs) root-owned,
 # и запись загруженных фото падает с EACCES.
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
@@ -51,6 +51,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Явно кладём движок Prisma рядом со standalone — трейсер Next иногда его пропускает.
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 
+RUN mkdir -p /app/storage/uploads && chown -R nextjs:nodejs /app/storage
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000

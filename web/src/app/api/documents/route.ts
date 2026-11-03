@@ -1,15 +1,19 @@
-import { z } from "zod";
-import { ok, Errors } from "@/lib/http";
-import { chairmanContext, memberContext } from "@/lib/auth/context";
-import { createDocument, listDocuments, deleteDocument, documentCategoryOrder } from "@/lib/documents/service";
+import { chairmanContext,memberContext } from "@/lib/auth/context";
 import { getOccupantBuilding } from "@/lib/comms/service";
+import { createDocument,deleteDocument,listDocuments } from "@/lib/documents/service";
+import { Errors,ok } from "@/lib/http";
+import { DocumentCategory } from "@prisma/client";
+import { hasRole } from "@/lib/auth/guards";
+import { z } from "zod";
+import { canReadUpload } from "@/lib/uploads/private";
+import { getBuilding } from "@/lib/onboarding/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CreateBody = z.object({
   buildingId: z.string().uuid(),
-  category: z.enum(documentCategoryOrder as [string, ...string[]]),
+  category: z.nativeEnum(DocumentCategory),
   title: z.string().min(1, "Название обязательно").max(200),
   description: z.string().max(1000).optional(),
   fileUrl: z.string().min(1, "Ссылка на файл обязательна"),
@@ -27,12 +31,13 @@ export async function GET(req: Request) {
   const buildingIdParam = url.searchParams.get("buildingId");
 
   let targetBuildingId = buildingIdParam;
-  const isChairman = ctx.auth.user.roles.some((r) => r.role === "CHAIRMAN" || r.role === "SUPERADMIN");
+  const isChairman = hasRole(ctx.auth, ctx.osiId, "CHAIRMAN", "SUPERADMIN");
 
   if (!targetBuildingId) {
     if (!isChairman) {
       const occ = await getOccupantBuilding(ctx.osiId, ctx.auth.user.id);
-      targetBuildingId = occ?.apartment?.buildingId ?? null;
+      if (targetBuildingId && targetBuildingId !== occ?.apartment.buildingId) return Errors.forbidden();
+      targetBuildingId = occ?.apartment.buildingId ?? null;
     }
   }
 
@@ -58,9 +63,11 @@ export async function POST(req: Request) {
     return Errors.validation(parsed.error.issues[0]?.message ?? "Некорректные данные");
   }
 
+  if (!await canReadUpload(ctx.auth, parsed.data.fileUrl)) return Errors.forbidden("Файл недоступен");
+  if (!await getBuilding(ctx.osiId, parsed.data.buildingId)) return Errors.notFound("Дом");
   const doc = await createDocument(ctx.osiId, {
     ...parsed.data,
-    category: parsed.data.category as any,
+    category: parsed.data.category,
     authorUserId: ctx.auth.user.id,
   });
 

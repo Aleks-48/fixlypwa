@@ -9,12 +9,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { GenerateReportForm, PublishButton } from "../../../_components/ReportControls";
 import { PageBody, PageHeader } from "../../../_components/PageHeader";
+import { getTranslation } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
 
 // «Отчёты» дома (председатель): генерация одним действием за месяц/квартал/год
 // (REQ-040/045) + публикация (REQ-043).
 export default async function ReportsPage({ params }: { params: Promise<{ buildingId: string }> }) {
+  const { t } = await getTranslation();
   const auth = await getCurrentAuth();
   if (!auth) redirect("/login");
   const osiId = activeChairmanOsi(auth);
@@ -29,8 +31,8 @@ export default async function ReportsPage({ params }: { params: Promise<{ buildi
   return (
     <>
       <PageHeader
-        title="Отчёты"
-        subtitle="Автоотчёт по приказу №163 — генерация и публикация"
+        title={t("title_chairman_reports")}
+        subtitle={t("subtitle_reports")}
         back={{ href: `/app/buildings/${buildingId}`, label: building.address }}
       />
       <PageBody>
@@ -42,7 +44,7 @@ export default async function ReportsPage({ params }: { params: Promise<{ buildi
         </Card>
 
         {reports.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Отчётов пока нет.</p>
+          <p className="text-sm text-muted-foreground">{t("label_no_reports")}</p>
         ) : (
           <ul className="m-0 grid list-none gap-2 p-0">
             {reports.map((r) => (
@@ -57,7 +59,7 @@ export default async function ReportsPage({ params }: { params: Promise<{ buildi
                     </Link>
                     {r.status === "PUBLISHED" ? (
                       <Badge variant="secondary" className="rounded-full" data-testid="report-published">
-                        Опубликован
+                        {t("label_report_published")}
                       </Badge>
                     ) : (
                       <PublishButton reportId={r.id} />

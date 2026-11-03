@@ -11,6 +11,9 @@ class AuthUser {
   final String? phone;
   final String? fullName;
   final String? activeOsiId;
+  final String? osiName;
+  final String? apartmentNumber;
+  final String? buildingAddress;
   final List<Map<String, dynamic>> roles;
 
   AuthUser({
@@ -19,6 +22,9 @@ class AuthUser {
     this.phone,
     this.fullName,
     this.activeOsiId,
+    this.osiName,
+    this.apartmentNumber,
+    this.buildingAddress,
     required this.roles,
   });
 
@@ -30,6 +36,9 @@ class AuthUser {
       phone: user['phone'] as String?,
       fullName: user['fullName'] as String?,
       activeOsiId: json['activeOsiId'] as String?,
+      osiName: json['osiName'] as String?,
+      apartmentNumber: json['apartmentNumber'] as String?,
+      buildingAddress: json['buildingAddress'] as String?,
       roles: ((json['roles'] as List?) ?? const [])
           .cast<Map<String, dynamic>>(),
     );
@@ -90,6 +99,34 @@ class AuthRepository {
       throw ApiException(
         'NO_TOKEN',
         'Сервер не вернул токен сессии (ожидался мобильный ответ, X-Client: mobile)',
+        500,
+      );
+    }
+    await _tokenStore.write(token);
+
+    final user = await me();
+    if (user == null) {
+      throw ApiException('AUTH_FAILED', 'Не удалось получить профиль после входа', 500);
+    }
+    return user;
+  }
+
+  // Вход председателя по email и паролю
+  Future<AuthUser> loginWithPassword(String email, String password) async {
+    final data = await _api.post(
+      '/api/auth/login',
+      body: {
+        'email': email.trim(),
+        'password': password,
+      },
+      auth: false,
+    ) as Map<String, dynamic>;
+
+    final token = data['token'] as String?;
+    if (token == null) {
+      throw ApiException(
+        'NO_TOKEN',
+        'Сервер не вернул токен сессии',
         500,
       );
     }

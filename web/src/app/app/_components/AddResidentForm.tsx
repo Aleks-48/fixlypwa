@@ -4,12 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlus } from "lucide-react";
 import { postJson } from "@/lib/apiClient";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-// Привязать жителя к квартире (REQ-013, ревизия auth-email.md §4): телефон И/ИЛИ email —
-// минимум один. Житель потом входит по коду (SMS или письмо) и видит свою квартиру.
 export function AddResidentForm({ apartmentId }: { apartmentId: string }) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -22,7 +22,7 @@ export function AddResidentForm({ apartmentId }: { apartmentId: string }) {
     e.preventDefault();
     setError(null);
     if (!phone.trim() && !email.trim()) {
-      setError("Укажите телефон или email");
+      setError(t("error_phone_or_email_required"));
       return;
     }
     setLoading(true);
@@ -55,7 +55,7 @@ export function AddResidentForm({ apartmentId }: { apartmentId: string }) {
         data-testid={`add-resident-${apartmentId}`}
         className="h-7 gap-1 px-2 text-primary"
       >
-        <UserPlus aria-hidden size={14} /> Житель
+        <UserPlus aria-hidden size={14} /> {t("role_resident")}
       </Button>
     );
   }
@@ -63,16 +63,16 @@ export function AddResidentForm({ apartmentId }: { apartmentId: string }) {
   return (
     <form onSubmit={submit} className="grid gap-2">
       <Input
-        aria-label="ФИО жителя"
+        aria-label={t("label_full_name")}
         value={fullName}
         onChange={(e) => setFullName(e.target.value)}
         required
         minLength={2}
-        placeholder="ФИО"
+        placeholder={t("label_full_name")}
         data-testid="resident-name"
       />
       <Input
-        aria-label="Телефон жителя"
+        aria-label={t("label_phone")}
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
         type="tel"
@@ -80,19 +80,19 @@ export function AddResidentForm({ apartmentId }: { apartmentId: string }) {
         data-testid="resident-phone"
       />
       <Input
-        aria-label="Email жителя"
+        aria-label="Email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         type="email"
-        placeholder="email (если нет телефона)"
+        placeholder={t("placeholder_email_optional")}
         data-testid="resident-email"
       />
       <div className="flex gap-2">
         <Button type="submit" disabled={loading} data-testid="resident-submit" size="sm">
-          {loading ? "Сохраняем…" : "Добавить"}
+          {loading ? t("status_saving") : t("btn_add")}
         </Button>
         <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
-          Отмена
+          {t("btn_cancel")}
         </Button>
       </div>
       {error && (

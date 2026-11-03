@@ -9,7 +9,7 @@ import { getMasterByUserId } from "@/lib/master/service";
 // «на проверке», отказ, ленту заказов) — так же, как chairman-страницы сами ветвят по roleFor.
 export async function requireMasterUser(): Promise<{ auth: AuthContext; master: Master | null }> {
   const auth = await getCurrentAuth();
-  if (!auth) redirect("/register?role=master");
+  if (!auth) redirect("/login?role=master");
   const master = await getMasterByUserId(auth.user.id);
   return { auth, master };
 }

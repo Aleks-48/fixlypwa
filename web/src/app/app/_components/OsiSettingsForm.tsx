@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Save, CheckCircle2 } from "lucide-react";
+import { useTranslation } from "@/lib/i18n/LanguageContext";
+import { CheckCircle2,Loader2,Save } from "lucide-react";
+import { useState } from "react";
 
 type OsiData = {
   id: string;
@@ -12,6 +13,7 @@ type OsiData = {
   bin: string | null;
   address: string | null;
   registeredAt: string | null;
+  chairmanFullName?: string;
 };
 
 type BankAccount = {
@@ -21,7 +23,6 @@ type BankAccount = {
   accountNumber: string;
 };
 
-// Форма реквизитов ОСИ и банковских счетов (REQ-045)
 export function OsiSettingsForm({
   osi: initialOsi,
   bankAccounts: initialAccounts,
@@ -31,8 +32,10 @@ export function OsiSettingsForm({
   bankAccounts: BankAccount[];
   buildingId: string;
 }) {
+  const { t } = useTranslation();
   const [osi, setOsi] = useState(initialOsi);
-  const [accounts, setAccounts] = useState(initialAccounts);
+  const [chairmanName, setChairmanName] = useState(initialOsi.chairmanFullName ?? "");
+  const [accounts, _setAccounts] = useState(initialAccounts);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +63,7 @@ export function OsiSettingsForm({
           bin: osi.bin,
           address: osi.address,
           registeredAt: osi.registeredAt ? new Date(osi.registeredAt) : null,
-          // Текущий счёт
+          chairmanFullName: chairmanName,
           ...(currentBank && currentIban
             ? {
                 bankAccount: {
@@ -77,7 +80,6 @@ export function OsiSettingsForm({
 
       if (!res.ok) throw new Error((await res.json()).error ?? "Ошибка сохранения");
 
-      // Сохранить сберегательный счёт отдельным запросом если заполнен
       if (savingsBank && savingsIban) {
         await fetch("/api/settings/osi", {
           method: "PATCH",
@@ -97,7 +99,7 @@ export function OsiSettingsForm({
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Ошибка");
+      setError(err instanceof Error ? err.message : "Неизвестная ошибка");
     } finally {
       setSaving(false);
     }
@@ -108,11 +110,20 @@ export function OsiSettingsForm({
       {/* Юридические реквизиты */}
       <section className="grid gap-4">
         <h4 className="m-0 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Юридические реквизиты
+          {t("label_legal_details")}
         </h4>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label htmlFor="osi-name">Наименование ОСИ</Label>
+            <Label htmlFor="chairman-name">ФИО Председателя (Руководителя)</Label>
+            <Input
+              id="chairman-name"
+              value={chairmanName}
+              onChange={(e) => setChairmanName(e.target.value)}
+              placeholder="Введите ФИО Председателя"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="osi-name">{t("label_osi_name")}</Label>
             <Input
               id="osi-name"
               value={osi.name}
@@ -123,7 +134,7 @@ export function OsiSettingsForm({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="osi-bin">БИН</Label>
+              <Label htmlFor="osi-bin">{t("label_bin")}</Label>
               <Input
                 id="osi-bin"
                 value={osi.bin ?? ""}
@@ -133,7 +144,7 @@ export function OsiSettingsForm({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="osi-reg-date">Дата регистрации</Label>
+              <Label htmlFor="osi-reg-date">{t("label_reg_date")}</Label>
               <Input
                 id="osi-reg-date"
                 type="date"
@@ -145,7 +156,7 @@ export function OsiSettingsForm({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="osi-address">Юридический адрес</Label>
+            <Label htmlFor="osi-address">{t("label_legal_address")}</Label>
             <Input
               id="osi-address"
               value={osi.address ?? ""}
@@ -159,11 +170,11 @@ export function OsiSettingsForm({
       {/* Текущий счёт */}
       <section className="grid gap-4">
         <h4 className="m-0 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Текущий счёт (управление и содержание)
+          {t("label_current_account_header")}
         </h4>
         <div className="grid grid-cols-2 gap-3">
           <div className="grid gap-1.5">
-            <Label htmlFor="current-bank">Банк</Label>
+            <Label htmlFor="current-bank">{t("label_bank")}</Label>
             <Input
               id="current-bank"
               value={currentBank}
@@ -172,7 +183,7 @@ export function OsiSettingsForm({
             />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="current-iban">IBAN (ИИК)</Label>
+            <Label htmlFor="current-iban">{t("label_iban")}</Label>
             <Input
               id="current-iban"
               value={currentIban}
@@ -186,11 +197,11 @@ export function OsiSettingsForm({
       {/* Сберегательный счёт */}
       <section className="grid gap-4">
         <h4 className="m-0 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Сберегательный счёт (кап. ремонт)
+          {t("label_savings_account_header")}
         </h4>
         <div className="grid grid-cols-2 gap-3">
           <div className="grid gap-1.5">
-            <Label htmlFor="savings-bank">Банк</Label>
+            <Label htmlFor="savings-bank">{t("label_bank")}</Label>
             <Input
               id="savings-bank"
               value={savingsBank}
@@ -199,7 +210,7 @@ export function OsiSettingsForm({
             />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="savings-iban">IBAN (ИИК)</Label>
+            <Label htmlFor="savings-iban">{t("label_iban")}</Label>
             <Input
               id="savings-iban"
               value={savingsIban}
@@ -223,10 +234,10 @@ export function OsiSettingsForm({
           ) : (
             <Save className="size-4" />
           )}
-          {saved ? "Сохранено!" : "Сохранить"}
+          {saved ? t("status_saved") : t("btn_save")}
         </Button>
         {saved && (
-          <span className="text-sm text-muted-foreground">Изменения применены</span>
+          <span className="text-sm text-muted-foreground">{t("label_changes_applied")}</span>
         )}
       </div>
     </form>

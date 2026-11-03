@@ -74,20 +74,27 @@ class _PdfReceiptsScreenState extends State<PdfReceiptsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          Icon(LucideIcons.fileText, color: c.primary, size: 22),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Единый платёжный документ',
-                            style: TextStyle(
-                              color: c.textPrimary,
-                              fontWeight: AppTypography.bold,
-                              fontSize: 15,
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Icon(LucideIcons.fileText, color: c.primary, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Единый платёжный документ',
+                                style: TextStyle(
+                                  color: c.textPrimary,
+                                  fontWeight: AppTypography.bold,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(

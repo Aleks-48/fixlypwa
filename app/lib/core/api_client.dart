@@ -75,10 +75,15 @@ class ApiClient {
     if (res.statusCode >= 200 && res.statusCode < 300) {
       return body['data'];
     }
-    final err = body['error'] as Map<String, dynamic>?;
+    final errObj = body['error'];
+    final errMessage = errObj is String
+        ? errObj
+        : (errObj is Map<String, dynamic> ? errObj['message'] as String? : null);
+    final errCode = errObj is Map<String, dynamic> ? errObj['code'] as String? : null;
+
     throw ApiException(
-      err?['code'] as String? ?? 'HTTP_ERROR',
-      err?['message'] as String? ?? 'Ошибка сети (${res.statusCode})',
+      errCode ?? 'HTTP_ERROR',
+      errMessage ?? (body['message'] as String?) ?? 'Ошибка сети (${res.statusCode})',
       res.statusCode,
     );
   }

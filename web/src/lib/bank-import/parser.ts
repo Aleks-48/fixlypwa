@@ -1,4 +1,6 @@
-import * as XLSX from 'xlsx';
+import { parseStatementDate } from "./date";
+import ExcelJS from 'exceljs';
+import { Readable } from 'node:stream';
 
 export interface ParsedBankTransaction {
   bankRef: string;
@@ -62,10 +64,7 @@ export function parse1CTxt(content: string): ParsedBankTransaction[] {
         break;
       case 'Дата':
         // Формат 1С: ДД.ММ.ГГГГ
-        const [d, m, y] = value.split('.');
-        if (d && m && y) {
-          currentTx.date = new Date(Number(y), Number(m) - 1, Number(d));
-        }
+        currentTx.date = parseStatementDate(value);
         break;
       case 'Сумма':
         currentTx.amount = parseFloat(value.replace(',', '.'));
@@ -101,18 +100,34 @@ export async function parseBankStatement(fileBuffer: Buffer, fileName: string): 
     return parse1CTxt(textContent);
   }
 
-  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
-    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-    const firstSheetName = workbook.SheetNames[0];
-    
-    if (!firstSheetName) {
-      throw new Error('Файл не содержит листов');
+  if (ext === 'xls') throw new Error('Сохраните старый файл .xls в формате .xlsx или CSV и загрузите повторно.');
+  if (ext === 'xlsx' || ext === 'csv') {
+    if (fileBuffer.length > 15 * 1024 * 1024) throw new Error('Максимальный размер выписки — 15 МБ');
+    const workbook = new ExcelJS.Workbook();
+    if (ext === 'csv') {
+      const firstLine = fileBuffer.toString('utf8').split(/\r?\n/, 1)[0] ?? '';
+      const delimiter = firstLine.includes(';') ? ';' : firstLine.includes('\t') ? '\t' : ',';
+      await workbook.csv.read(Readable.from([fileBuffer]), { parserOptions: { delimiter, trim: true }, map: value => value });
+    } else {
+      await workbook.xlsx.load(new Uint8Array(fileBuffer) as unknown as Parameters<typeof workbook.xlsx.load>[0]);
     }
-
-    const worksheet = workbook.Sheets[firstSheetName];
-// Добавьте проверку перед парсингом:
-if (!worksheet) return [];
-const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) throw new Error('Файл не содержит листов');
+    if (worksheet.rowCount > 50000) throw new Error('В выписке больше 50 000 строк');
+    const headers: string[] = [];
+    worksheet.getRow(1).eachCell((cell, number) => { headers[number] = cell.text.replace(/^\uFEFF/, '').trim(); });
+    const rawRows: Record<string, unknown>[] = [];
+    worksheet.eachRow((row, number) => {
+      if (number === 1) return;
+      const result: Record<string, unknown> = Object.create(null);
+      for (let column = 1; column < headers.length; column++) {
+        const key = headers[column];
+        if (!key) continue;
+        const cell = row.getCell(column);
+        result[key] = cell.value instanceof Date || typeof cell.value === "number" ? cell.value : cell.text;
+      }
+      rawRows.push(result);
+    });
     const transactions: ParsedBankTransaction[] = [];
 
     // Эвристический парсинг строк Excel
@@ -141,7 +156,7 @@ const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defva
 
       transactions.push({
         bankRef: String(bankRef).trim(),
-        date: dateVal instanceof Date ? dateVal : new Date(dateVal || Date.now()),
+        date: parseStatementDate(dateVal),
         amount,
         type,
         counterpartyName: String(counterparty).trim(),

@@ -29,7 +29,7 @@ export default defineConfig({
   webServer: process.env.E2E_NO_SERVER
     ? undefined
     : {
-        command: "npm run build && npm run start",
+        command: "npm run dev -- --hostname 127.0.0.1",
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 180_000,

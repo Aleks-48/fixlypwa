@@ -1,0 +1,10 @@
+import dotenv from 'dotenv';
+import {spawnSync} from 'node:child_process';
+import fs from 'node:fs';
+dotenv.config({quiet:true});
+const url=process.env.DIRECT_URL;
+if(!url || !['localhost','127.0.0.1'].includes(new URL(url).hostname)) throw Error('Local database required');
+const result=spawnSync(process.execPath,['node_modules/prisma/build/index.js','migrate','diff','--from-url',url,'--to-schema-datamodel','prisma/schema.prisma','--script'],{encoding:'utf8'});
+fs.writeFileSync('../.local-run/schema-drift.sql',result.stdout||'');
+console.log(result.status===0?'Schema diff saved to .local-run/schema-drift.sql':result.stderr);
+process.exitCode=result.status||0;

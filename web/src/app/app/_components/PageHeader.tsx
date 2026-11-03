@@ -1,13 +1,16 @@
-import type { ReactNode } from "react";
-import Link from "next/link";
-import { ArrowLeft, Search } from "lucide-react";
 import { getCurrentAuth } from "@/lib/auth/session";
 import { getShellContext } from "@/lib/auth/shell";
 import { getUnreadCount } from "@/lib/notifications/service";
-import { NotificationBell } from "./NotificationBell";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import type { ReactNode } from "react";
 import { MobileMenu } from "./MobileMenu";
+import { NotificationBell } from "./NotificationBell";
 
-// Шапка страницы по макету: 76px на lg+ (title+subtitle слева; actions, поиск-заглушка,
+
+import { GlobalSearch } from "./GlobalSearch";
+
+// Шапка страницы по макету: 76px на lg+ (title+subtitle слева; actions, поиск,
 // колокольчик справа), компактная на мобиле + кнопка-аватар меню-шторки (<lg).
 // Server component: контекст шелла и unread берёт сам (React cache — один запрос на рендер).
 export async function PageHeader({
@@ -41,12 +44,8 @@ export async function PageHeader({
           {subtitle && <p className="m-0 truncate text-[13px] text-muted-foreground">{subtitle}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
-          <div
-            title="Поиск скоро"
-            className="hidden w-56 items-center gap-2 rounded-xl border border-border bg-secondary px-3.5 py-2 text-muted-foreground/70 xl:flex"
-          >
-            <Search aria-hidden size={16} />
-            <span className="text-sm">Поиск скоро…</span>
+          <div className="hidden md:block">
+            <GlobalSearch />
           </div>
           {actions}
           {shell && <NotificationBell initialUnread={unread} />}

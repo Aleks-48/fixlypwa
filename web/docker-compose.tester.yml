@@ -1,0 +1,20 @@
+# Isolated local environment for the review archive. Never uses production volumes.
+name: fixly-tester
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Run node scripts/setup-tester.mjs}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5545:5432"
+    volumes:
+      - tester_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+volumes:
+  tester_pgdata:

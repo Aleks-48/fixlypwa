@@ -25,6 +25,10 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # One-shot: применяет миграции (init + rls_policies) и заменяет плейсхолдер-пароли ролей БД.
   migrate:
@@ -40,6 +44,10 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   pgbouncer:
     image: edoburu/pgbouncer:latest
@@ -67,6 +75,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   app:
     build:
@@ -113,6 +125,10 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
 
   nginx:
     build:
@@ -126,6 +142,10 @@ services:
     volumes:
       # Сертификаты в томе: локально генерится self-signed, в проде заменяется на Let's Encrypt.
       - nginx_certs:/etc/nginx/certs
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
 volumes:
   pgdata:

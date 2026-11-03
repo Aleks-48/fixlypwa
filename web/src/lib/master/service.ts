@@ -28,6 +28,7 @@ export function registerMaster(userId: string, input: RegisterMasterInput) {
       city: input.city,
       categories: input.categories,
       bio: input.bio,
+      status: "APPROVED", // Мгновенный онбординг для быстрого старта и заказов
     },
   });
 }

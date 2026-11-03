@@ -3,6 +3,8 @@ import 'package:fixly_app/theme/app_theme.dart';
 import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/core/market_repository.dart';
 import 'package:fixly_app/core/request_labels.dart';
+import 'package:fixly_app/core/events_repository.dart';
+import 'dart:async';
 
 // Лента заказов города мастера (REQ-064, REQ-149, срез 25) — зеркалит вкладку «Заказы»
 // web/src/app/master/page.tsx. Пока без SSE (срез 24): маркетплейс не входит в текущий
@@ -20,10 +22,30 @@ class _MasterListingsScreenState extends State<MasterListingsScreen> {
   bool _loading = true;
   String? _error;
 
+  StreamSubscription<SseEvent>? _sseSub;
+
   @override
   void initState() {
     super.initState();
     _load();
+    EventsRepository.instance.connect();
+    _sseSub = EventsRepository.instance.stream.listen((event) {
+      if (event.type == 'MARKET_LISTING_CREATED' && mounted) {
+        _load();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚡ Поступил новый заказ в вашем городе!'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sseSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {

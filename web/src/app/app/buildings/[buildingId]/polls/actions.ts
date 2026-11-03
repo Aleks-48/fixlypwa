@@ -1,9 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { getCurrentAuth } from "@/lib/auth/session";
 import { activeChairmanOsi } from "@/lib/auth/guards";
+import { getCurrentAuth } from "@/lib/auth/session";
 import { createPoll } from "@/lib/polls/service";
+import { revalidatePath } from "next/cache";
 
 export async function createPollAction(buildingId: string, formData: FormData) {
   const auth = await getCurrentAuth();
@@ -30,7 +30,9 @@ export async function createPollAction(buildingId: string, formData: FormData) {
 
     revalidatePath(`/app/buildings/${buildingId}/polls`, "page");
     return { success: true };
-  } catch (error: any) {
+  } catch (caughtError) {
+const error = caughtError instanceof Error ? caughtError : new Error(String(caughtError));
+
     console.error("Ошибка при создании опроса:", error);
     return { success: false, error: error?.message || "Не удалось сохранить опрос" };
   }

@@ -1,9 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+function useHydrated() {
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  return ready;
+}
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Play } from "lucide-react";
 
 async function postJson(url: string, body: unknown) {
   const res = await fetch(url, {
@@ -28,8 +35,8 @@ function ErrorText({ children }: { children: string }) {
   );
 }
 
-export function LoginForm({ mode }: { mode: "code" | "chairman" }) {
-  return mode === "chairman" ? <ChairmanForm /> : <CodeForm />;
+export function LoginForm({ mode, redirectTo }: { mode: "code" | "chairman"; redirectTo?: "/app" | "/master" | "/cabinet" }) {
+  return mode === "chairman" ? <ChairmanForm /> : <CodeForm redirectTo={redirectTo} />;
 }
 
 // Единая форма входа по коду (REQ-005/006, auth-email.md): одно поле «Телефон или email»,
@@ -37,13 +44,14 @@ export function LoginForm({ mode }: { mode: "code" | "chairman" }) {
 // collectFullName (onboarding-unified.md §0/9) — регистрация вдобавок собирает ФИО и шлёт его
 // в otp/verify (REQ-146/147); обычный вход (/login) поле не показывает и не шлёт.
 function CodeForm({
-  redirectTo = "/app",
+  redirectTo = "/cabinet",
   collectFullName = false,
 }: {
   redirectTo?: string;
   collectFullName?: boolean;
 }) {
   const [step, setStep] = useState<"identifier" | "code" | "telegram-link">("identifier");
+  const ready = useHydrated();
   const [fullName, setFullName] = useState("");
   const [identifier, setIdentifier] = useState("");
   const [channel, setChannel] = useState<"phone" | "email" | null>(null);
@@ -110,7 +118,7 @@ function CodeForm({
   return (
     <div className="mt-6 grid gap-4">
       {step === "identifier" ? (
-        <form onSubmit={requestCode} className="grid gap-4">
+        <form method="post" onSubmit={requestCode} className="grid gap-4">
           {collectFullName && (
             <div className="grid gap-1.5">
               <Label htmlFor="fullName">ФИО</Label>
@@ -142,6 +150,7 @@ function CodeForm({
               onChange={(e) => setIdentifier(e.target.value)}
               required
               data-testid="phone-input"
+              disabled={!ready}
               className="h-12 rounded-xl text-base"
             />
           </div>
@@ -161,13 +170,36 @@ function CodeForm({
           )}
           <Button
             type="submit"
-            disabled={loading}
+            disabled={loading || !ready}
             data-testid="request-otp"
             size="lg"
             className="h-12 rounded-xl text-base"
           >
             {loading ? "Отправляем…" : "Получить код"}
           </Button>
+
+          <div className="pt-1 text-center">
+            <a
+              href="/instructions"
+              target="_blank"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+            >
+              <Play size={13} className="fill-primary/20" />
+              🎥 Видеоинструкция: как войти и пользоваться сервисом
+            </a>
+          </div>
+
+          <p className="m-0 text-center text-[11px] text-muted-foreground leading-relaxed">
+            Нажимая «Получить код», вы соглашаетесь с{" "}
+            <a href="/legal/terms" target="_blank" className="text-primary underline underline-offset-2">
+              Условиями оферты
+            </a>{" "}
+            и даете согласие на{" "}
+            <a href="/legal/privacy" target="_blank" className="text-primary underline underline-offset-2">
+              обработку персональных данных
+            </a>
+            .
+          </p>
         </form>
       ) : step === "telegram-link" ? (
         <div className="grid gap-4">
@@ -190,7 +222,7 @@ function CodeForm({
             type="button"
             variant="outline"
             size="lg"
-            disabled={loading}
+            disabled={loading || !ready}
             data-testid="telegram-retry"
             className="h-12 rounded-xl text-base"
             onClick={() => void submitIdentifier()}
@@ -211,18 +243,19 @@ function CodeForm({
           </Button>
         </div>
       ) : (
-        <form onSubmit={verifyCode} className="grid gap-4">
+        <form method="post" onSubmit={verifyCode} className="grid gap-4">
           {devCode && (
             <p
               data-testid="dev-code"
               className="rounded-xl border border-dashed border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
             >
-              Код для входа (dev): <strong className="text-foreground">{devCode}</strong>
+              Код для тестового входа: <strong className="text-foreground">{devCode}</strong>
+              <span className="mt-1 block">Введите этот код ниже. Ждать SMS или Telegram не нужно.</span>
             </p>
           )}
           <div className="grid gap-1.5">
             <Label htmlFor="code">
-              {channel === "email" ? "Код из письма" : "Код из SMS/Telegram"}
+              {devCode ? "Код, показанный выше" : channel === "email" ? "Код из письма" : "Код из SMS/Telegram"}
             </Label>
             <Input
               id="code"
@@ -236,12 +269,13 @@ function CodeForm({
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
               required
               data-testid="code-input"
+              disabled={!ready}
               className="h-12 rounded-xl text-center text-lg tracking-[0.3em]"
             />
           </div>
           <Button
             type="submit"
-            disabled={loading}
+            disabled={loading || !ready}
             data-testid="verify-otp"
             size="lg"
             className="h-12 rounded-xl text-base"
@@ -282,6 +316,7 @@ export function RegisterCodeForm({ role }: { role: "resident" | "chairman" }) {
 }
 
 function ChairmanForm() {
+  const ready = useHydrated();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -302,7 +337,7 @@ function ChairmanForm() {
   }
 
   return (
-    <form onSubmit={submit} className="mt-6 grid gap-4">
+    <form method="post" onSubmit={submit} className="mt-6 grid gap-4">
       <div className="grid gap-1.5">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -314,6 +349,7 @@ function ChairmanForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
           data-testid="email-input"
+          disabled={!ready}
           className="h-12 rounded-xl text-base"
         />
       </div>
@@ -328,18 +364,31 @@ function ChairmanForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           data-testid="password-input"
+          disabled={!ready}
           className="h-12 rounded-xl text-base"
         />
       </div>
       <Button
         type="submit"
-        disabled={loading}
+        disabled={loading || !ready}
         data-testid="login-submit"
         size="lg"
         className="h-12 rounded-xl text-base"
       >
         {loading ? "Входим…" : "Войти"}
       </Button>
+
+      <p className="m-0 text-center text-[11px] text-muted-foreground leading-relaxed">
+        Входя в систему, вы принимаете{" "}
+        <a href="/legal/oferta-osi" target="_blank" className="text-primary underline underline-offset-2">
+          Оферту для Председателей
+        </a>{" "}
+        и{" "}
+        <a href="/legal/privacy" target="_blank" className="text-primary underline underline-offset-2">
+          Политику конфиденциальности
+        </a>
+        .
+      </p>
       {error && <ErrorText>{error}</ErrorText>}
     </form>
   );

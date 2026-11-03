@@ -1,8 +1,8 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Printer, Download, Building2, FileText, CheckCircle2 } from "lucide-react";
 import type { ReceiptData } from "@/lib/payments/receiptService";
+import { Building2,Printer } from "lucide-react";
 
 export function ReceiptPrintView({ receipt }: { receipt: ReceiptData }) {
   const handlePrint = () => {

@@ -448,12 +448,13 @@ export function buildingAccounts(osiId: string, buildingId: string) {
     const apartments = await tx.apartment.findMany({
       where: { buildingId },
       orderBy: { number: "asc" },
-      include: { account: { select: { id: true } } },
+      include: { account: { select: { id: true } }, owners: { select: { fullName: true } } },
     });
     const rows = [];
     for (const a of apartments) {
       rows.push({
         apartmentId: a.id,
+        ownerName: a.owners.map(o=>o.fullName).join(", "),
         number: a.number,
         accountId: a.account?.id ?? null,
         balances: a.account ? await accountBalances(tx, a.account.id) : null,

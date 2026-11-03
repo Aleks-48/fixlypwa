@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import type { RequestCategory } from "@prisma/client";
-import type { MasterWithPortfolio } from "@/lib/masters/service";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { MapPin, Phone, Wrench, CheckCircle2, Image as ImageIcon, Briefcase } from "lucide-react";
+import { Card,CardContent } from "@/components/ui/card";
+import { Dialog,DialogContent,DialogHeader,DialogTitle } from "@/components/ui/dialog";
+import type { MasterWithPortfolio } from "@/lib/masters/service";
+import type { RequestCategory } from "@prisma/client";
+import { Briefcase,CheckCircle2,Image as ImageIcon,List,Map as MapIcon,MapPin,Phone,Star,Wrench } from "lucide-react";
+import { useState } from "react";
 
 const CATEGORY_LABELS: Record<RequestCategory, string> = {
   PLUMBING: "Сантехника",
@@ -18,9 +18,10 @@ const CATEGORY_LABELS: Record<RequestCategory, string> = {
 };
 
 export function MasterCatalogView({ initialMasters }: { initialMasters: MasterWithPortfolio[] }) {
-  const [masters, setMasters] = useState<MasterWithPortfolio[]>(initialMasters);
+  const [masters, _setMasters] = useState<MasterWithPortfolio[]>(initialMasters);
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [selectedMaster, setSelectedMaster] = useState<MasterWithPortfolio | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "map">("grid");
 
   const filteredMasters = selectedCategory === "ALL"
     ? masters
@@ -28,28 +29,111 @@ export function MasterCatalogView({ initialMasters }: { initialMasters: MasterWi
 
   return (
     <div className="grid gap-6">
-      {/* Фильтр по категориям */}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant={selectedCategory === "ALL" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setSelectedCategory("ALL")}
-          className="rounded-full"
-        >
-          Все мастера ({masters.length})
-        </Button>
-        {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
+      {/* Шапка управления: Категории + Переключение Сетка/Карта */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        {/* Фильтр по категориям */}
+        <div className="flex flex-wrap gap-2">
           <Button
-            key={cat}
-            variant={selectedCategory === cat ? "default" : "outline"}
+            variant={selectedCategory === "ALL" ? "default" : "outline"}
             size="sm"
-            onClick={() => setSelectedCategory(cat)}
-            className="rounded-full"
+            onClick={() => setSelectedCategory("ALL")}
+            className="rounded-full text-xs"
           >
-            {label}
+            Все мастера ({masters.length})
           </Button>
-        ))}
+          {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
+            <Button
+              key={cat}
+              variant={selectedCategory === cat ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedCategory(cat)}
+              className="rounded-full text-xs"
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+
+        {/* Переключатель вида */}
+        <div className="flex items-center gap-1 rounded-full border border-border p-1 bg-background">
+          <Button
+            variant={viewMode === "grid" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setViewMode("grid")}
+            className="rounded-full text-xs gap-1.5 h-8"
+          >
+            <List size={14} />
+            Список
+          </Button>
+          <Button
+            variant={viewMode === "map" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => setViewMode("map")}
+            className="rounded-full text-xs gap-1.5 h-8"
+          >
+            <MapIcon size={14} />
+            На карте
+          </Button>
+        </div>
       </div>
+
+      {/* Отображение: Карта мастеров */}
+      {viewMode === "map" && (
+        <Card className="rounded-2xl shadow-sm overflow-hidden border">
+          <CardContent className="p-0 relative">
+            <div className="h-[480px] w-full bg-muted/30 relative flex flex-col justify-between p-4 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] dark:[background-size:16px_16px]">
+              
+              {/* Верхний баннер карты */}
+              <div className="z-10 flex items-center justify-between gap-2 bg-background/90 backdrop-blur p-3 rounded-xl border shadow-sm">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-primary animate-bounce" />
+                  <span className="text-xs font-semibold">Карта мастеров города (Кокшетау)</span>
+                </div>
+                <Badge variant="secondary" className="text-[10px]">
+                  {filteredMasters.length} на карте
+                </Badge>
+              </div>
+
+              {/* Сетка гео-пинов мастеров */}
+              <div className="relative flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 p-2 overflow-y-auto max-h-[380px]">
+                {filteredMasters.map((master, _idx) => (
+                  <div
+                    key={master.id}
+                    onClick={() => setSelectedMaster(master)}
+                    className="cursor-pointer bg-card hover:bg-accent border border-border/80 p-3 rounded-2xl shadow-sm transition-all hover:scale-[1.02] flex flex-col justify-between"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="size-8 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center shrink-0">
+                          {master.fullName[0]}
+                        </div>
+                        <div>
+                          <p className="m-0 font-bold text-xs line-clamp-1">{master.fullName}</p>
+                          <p className="m-0 text-[10px] text-muted-foreground">{master.city}</p>
+                        </div>
+                      </div>
+                      <Badge className="bg-amber-500/10 text-amber-600 border-none text-[10px] px-1.5 py-0.5 gap-1 shrink-0">
+                        <Star size={10} className="fill-amber-500 text-amber-500" />
+                        4.9
+                      </Badge>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between pt-2 border-t text-[11px] text-primary font-medium">
+                      <span>{CATEGORY_LABELS[master.categories[0] ?? "OTHER"] || "Мастер"}</span>
+                      <span>Подробнее ↗</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Нижний подвал карты */}
+              <div className="z-10 bg-background/90 backdrop-blur p-2.5 rounded-xl border text-[11px] text-muted-foreground text-center">
+                Выберите мастера на карте для просмотра фото работ и вызова
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Список мастеров */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -221,3 +305,4 @@ export function MasterCatalogView({ initialMasters }: { initialMasters: MasterWi
     </div>
   );
 }
+

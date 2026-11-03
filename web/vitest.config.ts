@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
 import { TEST_DATABASE_URL, TEST_DIRECT_URL } from "./tests/testDb";
 
 // Тестовая пирамида (mvp-build-prompt §6):
@@ -13,7 +14,7 @@ export default defineConfig({
         test: {
           name: "unit",
           environment: "node",
-          include: ["src/**/*.test.ts"],
+          include: ["src/**/*.test.ts", "tests/*.test.ts"],
           exclude: ["src/**/*.integration.test.ts"],
         },
       },
@@ -25,8 +26,10 @@ export default defineConfig({
           include: ["tests/integration/**/*.test.ts"],
           // Изоляция состояния тестовой БД между файлами — один воркер (последовательно).
           pool: "threads",
-          poolOptions: { threads: { singleThread: true } },
+          maxWorkers: 1,
+          fileParallelism: false,
           testTimeout: 30_000,
+          hookTimeout: 60_000,
           // Faza A обзора (2026-07-21): отдельная тестовая БД (fixlypwa_test) вместо демо-данных
           // (fixlypwa) — раньше интеграционные тесты писали прямо в стенд, показанный
           // инвестору, и оставляли там «Тест-ОСИ-*» строки. globalSetup создаёт БД/прогоняет
@@ -53,10 +56,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": new URL("./src", import.meta.url).pathname,
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
       // Серверные модули (lib/admin/service и др.) импортируют "server-only" — в node-тестах
       // пакет падает без react-server условия, подменяем пустой заглушкой.
-      "server-only": new URL("./tests/mocks/server-only.ts", import.meta.url).pathname,
+      "server-only": fileURLToPath(new URL("./tests/mocks/server-only.ts", import.meta.url)),
     },
   },
 });

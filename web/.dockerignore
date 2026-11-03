@@ -1,8 +1,15 @@
 node_modules
 .next
+.next-buildcheck
+storage
+technical-*.json
 .git
 .env
 .env.local
+.env.*
+public/uploads
+ngrok.yml
+ngrok.exe
 npm-debug.log
 # Incremental-кэши tsc — не тащить в образ, чтобы `next build` делал чистую детерминированную
 # проверку типов (иначе устаревший кэш с хоста может маскировать/искажать результат).

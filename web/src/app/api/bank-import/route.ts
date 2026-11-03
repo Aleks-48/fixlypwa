@@ -1,150 +1,35 @@
+import { chairmanContext } from "@/lib/auth/context";
+import { parseBankStatement } from "@/lib/bank-import/parser";
+import { BankImportError,importedBankRefs,previewBankImport,transactionsSchema } from "@/lib/bank-import/service";
+import { Errors } from "@/lib/http";
 import { NextResponse } from "next/server";
-import { getCurrentAuth as getAuthContext } from "@/lib/auth/session";  
-import { prisma } from "@/lib/db/prisma";
+import { z } from "zod";
 
-// GET: Получение списка уже импортированных банковских референсов (bankRef)
-export async function GET(req: Request) {
-  try {
-    const auth = await getAuthContext();
-    const tenantId = (auth as any)?.tenantId || (auth as any)?.osiId || (auth as any)?.session?.activeOsiId;
-
-    if (!auth || !tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const osiId = tenantId;
-
-    const existingPayments = await prisma.payment.findMany({
-      where: { osiId, bankRef: { not: null } } as any,
-      select: { bankRef: true } as any,
-    });
-
-    const existingExpenses = await prisma.expense.findMany({
-      where: { osiId, bankRef: { not: null } } as any,
-      select: { bankRef: true } as any,
-    });
-
-    const importedRefs = Array.from(
-      new Set([
-        ...existingPayments.map((p: any) => p.bankRef).filter(Boolean),
-        ...existingExpenses.map((e: any) => e.bankRef).filter(Boolean),
-      ])
-    );
-
-    return NextResponse.json({ importedRefs });
-  } catch (error: any) {
-    console.error("Error fetching imported refs:", error);
-    return NextResponse.json(
-      { error: error.message || "Ошибка получения банковских референсов" },
-      { status: 500 }
-    );
-  }
+export async function GET() {
+  const ctx = await chairmanContext();
+  if (!ctx.ok) return ctx.response;
+  return NextResponse.json({ importedRefs: await importedBankRefs(ctx.osiId) });
 }
 
-// POST: Разбор и сопоставление транзакций банковской выписки
 export async function POST(req: Request) {
+  const ctx = await chairmanContext();
+  if (!ctx.ok) return ctx.response;
   try {
-    const auth = await getAuthContext();
-    const tenantId = (auth as any)?.tenantId || (auth as any)?.osiId || (auth as any)?.session?.activeOsiId;
-
-    if (!auth || !tenantId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const osiId = tenantId;
-    const body = await req.json().catch(() => ({}));
-    const { transactions = [], buildingId } = body;
-
-    // 1. Загружаем существующие bankRef для проверки дубликатов
-    const existingPayments = await prisma.payment.findMany({
-      where: { osiId, bankRef: { not: null } } as any,
-      select: { bankRef: true } as any,
-    });
-
-    const existingExpenses = await prisma.expense.findMany({
-      where: { osiId, bankRef: { not: null } } as any,
-      select: { bankRef: true } as any,
-    });
-
-    const existingRefs = new Set([
-      ...existingPayments.map((p: any) => p.bankRef),
-      ...existingExpenses.map((e: any) => e.bankRef),
-    ]);
-
-    // 2. Загружаем квартиры дома вместе со счетами, владельцами и жильцами
-    const apartments: any[] = await prisma.apartment.findMany({
-      where: buildingId ? { buildingId } : { building: { osiId } },
-      include: {
-        account: true,
-        owners: true,
-        occupants: true,
-      },
-    } as any);
-
-    // 3. Сопоставляем транзакции
-    const items = transactions.map((tx: any) => {
-      const isDuplicate = tx.bankRef ? existingRefs.has(tx.bankRef) : false;
-
-      let matchedAccountId: string | undefined = undefined;
-      let matchedApartmentNumber: string | undefined = undefined;
-
-      if (tx.type === "INCOME") {
-        let matchedApartment: any = null;
-
-        // Поиск по номеру квартиры
-        if (tx.detectedApartmentNumber) {
-          matchedApartment = apartments.find(
-            (apt: any) => String(apt.number) === String(tx.detectedApartmentNumber)
-          );
-        }
-
-        // Поиск по ИИН/БИН
-        if (!matchedApartment && tx.counterpartyIinBin) {
-          matchedApartment = apartments.find((apt: any) =>
-            apt.owners?.some((owner: any) => owner.iin === tx.counterpartyIinBin)
-          );
-        }
-
-        // Поиск по ФИО в назначении или имени плательщика
-        if (!matchedApartment && tx.counterpartyName) {
-          const nameLower = tx.counterpartyName.toLowerCase();
-          matchedApartment = apartments.find(
-            (apt: any) =>
-              apt.owners?.some(
-                (owner: any) =>
-                  owner.fullName &&
-                  owner.fullName.trim().length > 2 &&
-                  nameLower.includes(owner.fullName.toLowerCase())
-              ) ||
-              apt.occupants?.some(
-                (occ: any) =>
-                  occ.fullName &&
-                  occ.fullName.trim().length > 2 &&
-                  nameLower.includes(occ.fullName.toLowerCase())
-              )
-          );
-        }
-
-        if (matchedApartment) {
-          matchedAccountId = matchedApartment.account?.id;
-          matchedApartmentNumber = matchedApartment.number;
-        }
-      }
-
-      return {
-        ...tx,
-        isDuplicate,
-        matchedAccountId,
-        matchedApartmentNumber,
-      };
-    });
-
-    return NextResponse.json({ items });
-  } catch (error: any) {
-    console.error("Error parsing/matching bank import:", error);
-    return NextResponse.json(
-      { error: error.message || "Ошибка обработки банковской выписки" },
-      { status: 500 }
-    );
+    let input: unknown;
+    if (req.headers.get("content-type")?.includes("multipart/form-data")) {
+      const form = await req.formData();
+      const file = form.get("file");
+      if (!(file instanceof File) || file.size > 10 * 1024 * 1024) return Errors.validation("Выберите выписку размером до 10 МБ");
+      if (!/\.(xlsx|xls|csv|txt)$/i.test(file.name)) return Errors.validation("Поддерживаются XLSX, XLS, CSV и TXT");
+      input = { transactions: await parseBankStatement(Buffer.from(await file.arrayBuffer()), file.name), buildingId: form.get("buildingId") || undefined };
+    } else input = await req.json();
+    const parsed = z.object({ transactions: transactionsSchema, buildingId: z.string().uuid().optional() }).safeParse(input);
+    if (!parsed.success) return Errors.validation("Проверьте номер, дату и положительную сумму до тиына (до 500 строк)");
+    return NextResponse.json({ items: await previewBankImport(ctx.osiId, parsed.data.transactions, parsed.data.buildingId) });
+  } catch (error) {
+    if (error instanceof BankImportError || error instanceof RangeError) return Errors.validation(error.message);
+    if (error instanceof SyntaxError || error instanceof TypeError) return Errors.validation("Некорректный файл или формат запроса");
+    console.error("[bank-import] preview failed", error);
+    return Errors.internal();
   }
 }

@@ -6,6 +6,18 @@
 
 declare const self: ServiceWorkerGlobalScope;
 
+// HANDOFF-003: remove the old default caches that may contain private responses.
+const LEGACY_CACHES = new Set([
+  "start-url", "pages", "pages-rsc", "pages-rsc-prefetch", "apis", "next-data",
+  "static-data-assets", "next-image", "static-image-assets", "static-audio-assets",
+  "static-video-assets", "cross-origin",
+]);
+self.addEventListener("activate", (event: ExtendableEvent) => {
+  event.waitUntil(caches.keys().then((keys) => Promise.all(
+    keys.filter((key) => LEGACY_CACHES.has(key)).map((key) => caches.delete(key)),
+  )));
+});
+
 const GENERIC_TITLES: Record<string, string> = {
   ANNOUNCEMENT: "Новое объявление",
   REQUEST_CREATED: "Новая заявка",
