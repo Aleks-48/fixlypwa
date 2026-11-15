@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fixly_app/theme/app_theme.dart';
 import 'package:fixly_app/core/api_client.dart';
@@ -7,15 +9,39 @@ import 'package:fixly_app/core/app_localizations.dart';
 import 'package:fixly_app/main.dart' show appLanguage;
 
 class CreateRequestScreen extends StatefulWidget {
-  const CreateRequestScreen({super.key});
+  final String? photoPath;
+  final String? category;
+  final String? description;
+  const CreateRequestScreen({super.key, this.photoPath, this.category, this.description});
 
   @override
   State<CreateRequestScreen> createState() => _CreateRequestScreenState();
 }
 
 class _CreateRequestScreenState extends State<CreateRequestScreen> {
-  String _category = requestCategoryOrder.first;
-  final _textCtrl = TextEditingController();
+  late String _category = widget.category ?? requestCategoryOrder.first;
+  late String? _photoPath = widget.photoPath;
+  String? _uploadedUrl;
+  bool _picking = false;
+
+  Future<void> _pick(ImageSource source) async {
+    if (_picking || _submitting) return;
+    _picking = true;
+    try {
+      final photo = await ImagePicker().pickImage(source: source, maxWidth: 1600, imageQuality: 85);
+      if (mounted && photo != null) {
+        setState(() {
+          _photoPath = photo.path;
+          _uploadedUrl = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Не удалось открыть камеру или медиатеку');
+    } finally {
+      _picking = false;
+    }
+  }
+  late final _textCtrl = TextEditingController(text: widget.description);
   bool _submitting = false;
   String? _error;
 
@@ -26,10 +52,13 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
   }
 
   Future<void> _submit() async {
+    if (_submitting) return;
     final text = _textCtrl.text.trim();
     if (text.isEmpty) {
       final lang = appLanguage.value;
-      setState(() => _error = lang == 'ru' ? 'Опишите проблему' : 'Проблеманы сипаттаңыз');
+      setState(() => _error = lang == 'ru'
+          ? 'Опишите проблему'
+          : (lang == 'en' ? 'Describe the issue' : 'Проблеманы сипаттаңыз'));
       return;
     }
     setState(() {
@@ -37,12 +66,14 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
       _error = null;
     });
     try {
-      final id = await RequestsRepository.instance.create(category: _category, text: text);
+      if (_photoPath != null) _uploadedUrl ??= await ApiClient.instance.uploadPhoto(_photoPath!);
+      final id = await RequestsRepository.instance.create(category: _category, text: text,
+          photoUrls: _uploadedUrl == null ? null : [_uploadedUrl!]);
       if (mounted) Navigator.pop(context, id);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = AppLocalizations.tr('status_error'));
+      if (mounted) setState(() => _error = AppLocalizations.tr('status_error'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -109,6 +140,22 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                   ),
                 ),
               ),
+              if (_photoPath != null)
+                Image.file(
+                  File(_photoPath!),
+                  height: 140,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              Wrap(children: [
+                TextButton.icon(onPressed: _submitting ? null : () => _pick(ImageSource.gallery),
+                    icon: const Icon(Icons.photo_library), label: Text(lang == 'ru' ? 'Из галереи' : 'Галереядан')),
+                TextButton.icon(onPressed: _submitting ? null : () => _pick(ImageSource.camera),
+                    icon: const Icon(Icons.camera_alt), label: Text(lang == 'ru' ? 'Снять фото' : 'Фото түсіру')),
+                if (_photoPath != null)
+                  IconButton(tooltip: lang == 'ru' ? 'Убрать фото' : 'Фотоны өшіру', icon: const Icon(Icons.close),
+                    onPressed: _submitting ? null : () => setState(() { _photoPath = null; _uploadedUrl = null; })),
+              ]),
               if (_error != null) ...[
                 const SizedBox(height: AppDimens.spaceSm),
                 Text(_error!, style: TextStyle(color: c.danger)),

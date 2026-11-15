@@ -28,7 +28,12 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
   List<OsiSearchResult> _results = [];
   OsiSearchResult? _selected;
   bool _searching = false;
+  bool _hasSearched = false;
   bool _submitting = false;
+  bool _checkingStatus = false;
+  bool _loggingOut = false;
+  final Set<String> _cancellingIds = {};
+  int _searchSeq = 0;
   String? _error;
   Timer? _debounce;
 
@@ -63,6 +68,8 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
   // ПЕРЕД заявками; если председатель уже привязал квартиру, сразу ведём в HomeRouter вместо
   // повторного показа пустого поиска (и риска повторной заявки).
   Future<void> _checkStatus() async {
+    if (_checkingStatus) return;
+    _checkingStatus = true;
     try {
       final user = await AuthRepository.instance.me();
       if (user != null && user.activeRole != null) {
@@ -77,36 +84,62 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
       }
     } catch (_) {
       // сеть недоступна — остаёмся на экране, ниже всё равно обновим список заявок
+    } finally {
+      _checkingStatus = false;
     }
-    await _load();
+    if (mounted) {
+      await _load();
+    }
   }
 
   // Debounce поиска (300мс), как на веб-аналоге — не долбим API на каждое нажатие.
   void _onQueryChanged(String v) {
-    setState(() => _selected = null);
     _debounce?.cancel();
-    if (v.trim().length < 2) {
-      setState(() => _results = []);
+    final trimmed = v.trim();
+    _searchSeq++;
+    if (trimmed.length < 2) {
+      setState(() {
+        _selected = null;
+        _results = [];
+        _searching = false;
+        _hasSearched = false;
+      });
       return;
     }
-    _debounce = Timer(const Duration(milliseconds: 300), () => _runSearch(v.trim()));
+    setState(() {
+      _selected = null;
+      _searching = false;
+      _hasSearched = false;
+    });
+    _debounce = Timer(const Duration(milliseconds: 300), () => _runSearch(trimmed));
   }
 
   Future<void> _runSearch(String q) async {
+    final seq = ++_searchSeq;
     setState(() => _searching = true);
     try {
       final results = await OsiRepository.instance.searchOsi(q);
-      if (mounted) setState(() => _results = results);
+      if (!mounted || seq != _searchSeq) return;
+      setState(() {
+        _results = results;
+        _hasSearched = true;
+      });
     } catch (_) {
-      if (mounted) setState(() => _results = []);
+      if (!mounted || seq != _searchSeq) return;
+      setState(() {
+        _results = [];
+        _hasSearched = true;
+      });
     } finally {
-      if (mounted) setState(() => _searching = false);
+      if (mounted && seq == _searchSeq) {
+        setState(() => _searching = false);
+      }
     }
   }
 
   Future<void> _submit() async {
     final selected = _selected;
-    if (selected == null) return;
+    if (_submitting || selected == null) return;
     setState(() {
       _submitting = true;
       _error = null;
@@ -115,6 +148,7 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
       final note = _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim();
       final id = await OsiRepository.instance.submitJoinRequest(osiId: selected.id, note: note);
       if (mounted) {
+        _searchSeq++;
         setState(() {
           _myRequests = [
             MyJoinRequest(
@@ -129,32 +163,55 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
           _queryCtrl.clear();
           _noteCtrl.clear();
           _results = [];
+          _searching = false;
+          _hasSearched = false;
         });
       }
     } catch (err) {
-      setState(() => _error = err.toString());
+      if (mounted) {
+        setState(() => _error = err.toString());
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
   }
 
   Future<void> _cancel(String id) async {
+    if (_cancellingIds.contains(id)) return;
+    setState(() {
+      _cancellingIds.add(id);
+      _error = null;
+    });
     try {
       await OsiRepository.instance.cancelJoinRequest(id);
-      if (mounted) setState(() => _myRequests.removeWhere((r) => r.id == id));
+      if (mounted) {
+        setState(() => _myRequests.removeWhere((r) => r.id == id));
+      }
     } catch (err) {
       if (mounted) setState(() => _error = err.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _cancellingIds.remove(id));
+      } else {
+        _cancellingIds.remove(id);
+      }
     }
   }
 
   Future<void> _logout() async {
-    await AuthRepository.instance.logout();
-    if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (_) => false,
-    );
+    if (_loggingOut) return;
+    _loggingOut = true;
+    try {
+      await AuthRepository.instance.logout();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (_) => false,
+      );
+    } finally {
+      _loggingOut = false;
+    }
   }
 
   @override
@@ -191,8 +248,13 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
                   ),
                   const SizedBox(height: AppDimens.spaceMd),
                   if (_myRequests.isNotEmpty) ...[
-                    ..._myRequests
-                        .map((r) => _PendingCard(request: r, onCancel: () => _cancel(r.id))),
+                    ..._myRequests.map(
+                      (r) => _PendingCard(
+                        request: r,
+                        isCancelling: _cancellingIds.contains(r.id),
+                        onCancel: () => _cancel(r.id),
+                      ),
+                    ),
                     Center(
                       child: TextButton(
                         onPressed: _checkStatus,
@@ -225,10 +287,14 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
                       for (final r in _results)
                         AppCard(
                           margin: const EdgeInsets.only(bottom: AppDimens.spaceXs),
-                          onTap: () => setState(() {
-                            _selected = r;
-                            _results = [];
-                          }),
+                          onTap: () {
+                            _searchSeq++;
+                            setState(() {
+                              _selected = r;
+                              _results = [];
+                              _searching = false;
+                            });
+                          },
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -249,6 +315,7 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
                         ),
                     ],
                     if (!_searching &&
+                        _hasSearched &&
                         _queryCtrl.text.trim().length >= 2 &&
                         _results.isEmpty &&
                         _selected == null)
@@ -260,8 +327,8 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
                     if (_selected != null) ...[
                       const SizedBox(height: AppDimens.spaceMd),
                       AppCard(
-                        borderColor: c.primary.withOpacity(0.4),
-                        backgroundColor: c.primary.withOpacity(0.06),
+                        borderColor: c.primary.withValues(alpha: 0.4),
+                        backgroundColor: c.primary.withValues(alpha: 0.06),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -285,19 +352,20 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
                               ),
                             ),
                             const SizedBox(height: AppDimens.spaceSm),
-                            Row(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Expanded(
-                                  child: AppButton(
-                                    label: _submitting ? 'Отправляем…' : 'Отправить заявку',
-                                    icon: LucideIcons.send,
-                                    isLoading: _submitting,
-                                    onPressed: _submit,
-                                  ),
+                                AppButton(
+                                  label: _submitting ? 'Отправляем…' : 'Отправить заявку',
+                                  icon: LucideIcons.send,
+                                  isLoading: _submitting,
+                                  onPressed: _submit,
                                 ),
-                                const SizedBox(width: AppDimens.spaceSm),
+                                const SizedBox(height: AppDimens.spaceXs),
                                 OutlinedButton(
-                                  onPressed: () => setState(() => _selected = null),
+                                  onPressed: _submitting
+                                      ? null
+                                      : () => setState(() => _selected = null),
                                   child: const Text('Отмена'),
                                 ),
                               ],
@@ -306,10 +374,10 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
                         ),
                       ),
                     ],
-                    if (_error != null) ...[
-                      const SizedBox(height: AppDimens.spaceSm),
-                      Text(_error!, style: TextStyle(color: c.danger, fontSize: AppTypography.caption)),
-                    ],
+                  ],
+                  if (_error != null) ...[
+                    const SizedBox(height: AppDimens.spaceSm),
+                    Text(_error!, style: TextStyle(color: c.danger, fontSize: AppTypography.caption)),
                   ],
                   if (widget.onBecomeMaster != null) ...[
                     const SizedBox(height: AppDimens.spaceLg),
@@ -329,8 +397,13 @@ class _JoinOsiScreenState extends State<JoinOsiScreen> {
 
 class _PendingCard extends StatelessWidget {
   final MyJoinRequest request;
+  final bool isCancelling;
   final VoidCallback onCancel;
-  const _PendingCard({required this.request, required this.onCancel});
+  const _PendingCard({
+    required this.request,
+    this.isCancelling = false,
+    required this.onCancel,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -363,9 +436,12 @@ class _PendingCard extends StatelessWidget {
           ),
           const SizedBox(height: AppDimens.spaceSm),
           TextButton.icon(
-            onPressed: onCancel,
+            onPressed: isCancelling ? null : onCancel,
             icon: Icon(LucideIcons.x, size: 16, color: c.textTertiary),
-            label: Text('Отменить заявку', style: TextStyle(color: c.textTertiary)),
+            label: Text(
+              isCancelling ? 'Отменяем…' : 'Отменить заявку',
+              style: TextStyle(color: c.textTertiary),
+            ),
           ),
         ],
       ),

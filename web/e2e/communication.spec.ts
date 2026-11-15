@@ -83,7 +83,7 @@ test("объявление → прочтение и заявка → смена
   const reqChair = cp.getByTestId("request-card").filter({ hasText: "Течёт кран" });
   await expect(reqChair).toBeVisible();
   await reqChair.getByTestId("status-IN_PROGRESS").click();
-  await expect(reqChair.getByTestId("status-IN_PROGRESS")).toBeDisabled(); // активный статус
+  await expect(reqChair.getByTestId("status-IN_PROGRESS")).toHaveAttribute("aria-pressed", "true"); // сервер подтвердил смену статуса
 
   // ── Житель видит обновлённый статус ──
   await rp.reload();

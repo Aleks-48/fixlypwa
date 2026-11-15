@@ -27,6 +27,7 @@ class _MasterApplicationScreenState extends State<MasterApplicationScreen> {
   final Set<String> _categories = {};
 
   bool _isLoading = false;
+  bool _loggingOut = false;
   String? _error;
   String? _submittedStatus; // не null → показываем экран «на проверке»
 
@@ -45,6 +46,7 @@ class _MasterApplicationScreenState extends State<MasterApplicationScreen> {
   }
 
   Future<void> _submit() async {
+    if (_isLoading) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     if (_categories.isEmpty) {
       setState(() => _error = 'Выберите хотя бы одну категорию');
@@ -63,22 +65,28 @@ class _MasterApplicationScreenState extends State<MasterApplicationScreen> {
       );
       if (mounted) setState(() => _submittedStatus = app.status);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'Ошибка подключения');
+      if (mounted) setState(() => _error = 'Ошибка подключения');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _logout() async {
-    await AuthRepository.instance.logout();
-    if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (_) => false,
-    );
+    if (_loggingOut) return;
+    setState(() => _loggingOut = true);
+    try {
+      await AuthRepository.instance.logout();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (_) => false,
+      );
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
   }
 
   @override
@@ -92,7 +100,10 @@ class _MasterApplicationScreenState extends State<MasterApplicationScreen> {
         automaticallyImplyLeading: false,
         title: Text('Анкета мастера', style: TextStyle(color: c.textPrimary)),
         actions: [
-          IconButton(icon: Icon(Icons.logout, color: c.textPrimary), onPressed: _logout),
+          IconButton(
+            icon: Icon(Icons.logout, color: c.textPrimary),
+            onPressed: _loggingOut ? null : _logout,
+          ),
         ],
       ),
       body: SafeArea(
@@ -103,7 +114,7 @@ class _MasterApplicationScreenState extends State<MasterApplicationScreen> {
 
   Widget _pendingState(AppColors c) {
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppDimens.spaceLg),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -220,7 +231,7 @@ class _MasterApplicationScreenState extends State<MasterApplicationScreen> {
                 onPressed: _isLoading ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: c.primary,
-                  disabledBackgroundColor: c.primary.withOpacity(0.5),
+                  disabledBackgroundColor: c.primary.withValues(alpha: 0.5),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.radiusMd)),
                 ),
                 child: _isLoading

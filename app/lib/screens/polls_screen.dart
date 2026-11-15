@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/theme/app_theme.dart';
+import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/core/polls_repository.dart';
 
 // Опросы дома, вид жителя — вкладки Активные/Завершённые.
@@ -19,6 +20,7 @@ class _PollsScreenState extends State<PollsScreen>
   bool _loading = true;
   String? _error;
   String? _votingOptionId; // блокирует повторный тап, пока идёт запрос
+  int _loadSeq = 0;
 
   @override
   void initState() {
@@ -34,66 +36,46 @@ class _PollsScreenState extends State<PollsScreen>
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final polls = await PollsRepository.instance.list();
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _polls = polls;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
-        _error = e.toString();
+        _error = e is ApiException ? e.message : e.toString();
         _loading = false;
       });
     }
   }
 
   Future<void> _vote(String optionId) async {
+    if (_votingOptionId != null) return;
     setState(() => _votingOptionId = optionId);
     try {
       await PollsRepository.instance.vote(optionId);
-      await _load();
-    } catch (e) {
       if (!mounted) return;
-      
-      // Локальный фоллбек (оптимистичный UI) на случай ошибки бэкенда:
-      setState(() {
-        _polls = _polls.map((poll) {
-          final hasOption = poll.options.any((o) => o.id == optionId);
-          if (!hasOption) return poll;
-
-          final updatedOptions = poll.options.map((opt) {
-            if (opt.id == optionId) {
-              return PollOption(
-                id: opt.id,
-                label: opt.label,
-                votes: opt.votes + 1,
-              );
-            }
-            return opt;
-          }).toList();
-
-          return Poll(
-            id: poll.id,
-            question: poll.question,
-            options: updatedOptions,
-            closed: poll.closed,
-            myOptionId: optionId, // Задание myOptionId автоматически дает voted = true
-            totalVotes: poll.totalVotes + 1,
-          );
-        }).toList();
-      });
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Ваш голос принят'),
           duration: Duration(seconds: 2),
+        ),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e is ApiException ? e.message : e.toString()),
         ),
       );
     } finally {
@@ -130,7 +112,7 @@ class _PollsScreenState extends State<PollsScreen>
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(
-                  child: Padding(
+                  child: SingleChildScrollView(
                     padding: const EdgeInsets.all(AppDimens.spaceLg),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -175,6 +157,7 @@ class _PollList extends StatelessWidget {
       onRefresh: onRefresh,
       child: polls.isEmpty
           ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(AppDimens.spaceLg),
               children: [
                 Center(
@@ -186,6 +169,7 @@ class _PollList extends StatelessWidget {
               ],
             )
           : ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(AppDimens.spaceMd),
               children: [
                 for (final poll in polls)
@@ -337,7 +321,7 @@ class _ResultRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = colors;
-    final pct = totalVotes == 0 ? 0 : (option.votes / totalVotes * 100).round();
+    final pct = totalVotes <= 0 ? 0 : (option.votes / totalVotes * 100).round().clamp(0, 100);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -352,6 +336,7 @@ class _ResultRow extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(width: 8),
             Text('$pct% (${option.votes})',
                 style: TextStyle(color: c.textSecondary, fontSize: AppTypography.caption)),
           ],
@@ -365,7 +350,7 @@ class _ResultRow extends StatelessWidget {
                 Container(height: 8, color: c.surfaceVariant),
                 Container(
                   height: 8,
-                  width: constraints.maxWidth * (pct / 100),
+                  width: constraints.maxWidth * (pct / 100).clamp(0.0, 1.0),
                   color: mine ? c.primary : c.textTertiary,
                 ),
               ],

@@ -2,11 +2,9 @@
 
 import { Landmark } from "lucide-react";
 
-// Список фич в разработке
-// Если список станет пустым (length === 0), блок полностью скроется
-const soonItems: { label: string }[] = [
-  // { label: "Импорт банковской выписки" }, <-- УДАЛИТЕ ИЛИ ЗАКОММЕНТИРУЙТЕ ЭТУ СТРОКУ
-];
+import { siteSoonItems } from "@/lib/featureCatalog";
+
+const soonItems = siteSoonItems();
 
 export function FeatureCatalogSoonList() {
   if (soonItems.length === 0) {

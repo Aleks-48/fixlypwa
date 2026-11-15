@@ -1,4 +1,7 @@
+import 'master_call_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
+import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/core/protected_files.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/theme/app_theme.dart';
@@ -26,6 +29,7 @@ class _MasterProfileScreenState extends State<MasterProfileScreen>
   late TabController _tabs;
   MasterDetail? _detail;
   bool _loadingDetail = true;
+  bool _openingRequestSheet = false;
 
   @override
   void initState() {
@@ -54,17 +58,23 @@ class _MasterProfileScreenState extends State<MasterProfileScreen>
     }
   }
 
-  void _openCreateRequest() {
+  Future<void> _openCreateRequest() async {
+    if (_openingRequestSheet) return;
+    _openingRequestSheet = true;
     final c = AppColors.of(context);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _CreateRequestSheet(
-        master: widget.master,
-        colors: c,
-      ),
-    );
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => _CreateRequestSheet(
+          master: widget.master,
+          colors: c,
+        ),
+      );
+    } finally {
+      _openingRequestSheet = false;
+    }
   }
 
   @override
@@ -82,7 +92,7 @@ class _MasterProfileScreenState extends State<MasterProfileScreen>
         slivers: [
           // ── SliverAppBar с профилем ─────────────────────────────────────────
           SliverAppBar(
-            expandedHeight: 240,
+            expandedHeight: 280,
             pinned: true,
             backgroundColor: c.card,
             iconTheme: IconThemeData(color: c.textPrimary),
@@ -99,111 +109,139 @@ class _MasterProfileScreenState extends State<MasterProfileScreen>
                   ),
                 ),
                 child: SafeArea(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const SizedBox(height: 40),
-                      // Аватар
-                      CircleAvatar(
-                        radius: 40,
-                        backgroundColor: c.primary.withValues(alpha: 0.15),
-                        child: Text(
-                          initial,
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.only(
+                      top: 24,
+                      bottom: 54,
+                      left: AppDimens.spaceMd,
+                      right: AppDimens.spaceMd,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Аватар
+                        CircleAvatar(
+                          radius: 34,
+                          backgroundColor: c.primary.withValues(alpha: 0.15),
+                          child: Text(
+                            initial,
+                            style: TextStyle(
+                              color: c.primary,
+                              fontSize: 28,
+                              fontWeight: AppTypography.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          master.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: c.primary,
-                            fontSize: 32,
+                            color: c.textPrimary,
+                            fontSize: 19,
                             fontWeight: AppTypography.bold,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        master.fullName,
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 20,
-                          fontWeight: AppTypography.bold,
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(LucideIcons.mapPin, size: 13, color: c.textTertiary),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                master.city,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: c.textTertiary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(LucideIcons.mapPin, size: 13, color: c.textTertiary),
-                          const SizedBox(width: 3),
-                          Text(
-                            master.city,
-                            style: TextStyle(
-                              color: c.textTertiary,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      // Рейтинг + значок Проверен
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withValues(alpha: 0.15),
-                              borderRadius:
-                                  BorderRadius.circular(AppDimens.radiusSm),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.star_rounded,
-                                    size: 15, color: Colors.amber),
-                                const SizedBox(width: 4),
-                                Text(
-                                  master.rating.toStringAsFixed(1),
-                                  style: TextStyle(
-                                    color: c.textPrimary,
-                                    fontWeight: AppTypography.bold,
-                                    fontSize: 13,
+                        const SizedBox(height: 8),
+                        // Рейтинг + значок Проверен
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withValues(alpha: 0.15),
+                                borderRadius:
+                                    BorderRadius.circular(AppDimens.radiusSm),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.star_rounded,
+                                      size: 15, color: Colors.amber),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    master.rating.toStringAsFixed(1),
+                                    style: TextStyle(
+                                      color: c.textPrimary,
+                                      fontWeight: AppTypography.bold,
+                                      fontSize: 13,
+                                    ),
                                   ),
-                                ),
-                                Text(
-                                  ' (${master.reviewsCount})',
-                                  style: TextStyle(
-                                    color: c.textTertiary,
-                                    fontSize: 12,
+                                  Flexible(
+                                    child: Text(
+                                      ' (${master.reviewsCount})',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: c.textTertiary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: c.success.withValues(alpha: 0.12),
-                              borderRadius:
-                                  BorderRadius.circular(AppDimens.radiusSm),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(LucideIcons.checkCircle2,
-                                    size: 13, color: c.success),
-                                const SizedBox(width: 4),
-                                Text(
-                                  AppLocalizations.tr('master_verified'),
-                                  style: TextStyle(
-                                    color: c.success,
-                                    fontSize: 12,
-                                    fontWeight: AppTypography.semibold,
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: c.success.withValues(alpha: 0.12),
+                                borderRadius:
+                                    BorderRadius.circular(AppDimens.radiusSm),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(LucideIcons.checkCircle2,
+                                      size: 13, color: c.success),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      AppLocalizations.tr('master_verified'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: c.success,
+                                        fontSize: 12,
+                                        fontWeight: AppTypography.semibold,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -307,20 +345,37 @@ class _MasterProfileScreenState extends State<MasterProfileScreen>
         if (master.bio != null && master.bio!.isNotEmpty)
           const SizedBox(height: AppDimens.spaceMd),
 
+        FilledButton.icon(icon: const Icon(Icons.video_call), label: const Text('Видеозвонок мастеру'),
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
+            MasterCallScreen(name: master.fullName, masterId: master.id)))),
         // Контакт (телефон)
-        if (master.phone != null)
+        if (master.phone != null) ...[
+          const SizedBox(height: AppDimens.spaceSm),
           _Section(
             icon: LucideIcons.phone,
             title: AppLocalizations.tr('profile_phone'),
             colors: c,
-            child: Text(
-              master.phone!,
-              style: TextStyle(
-                color: c.textPrimary,
-                fontWeight: AppTypography.semibold,
-              ),
+            child: TextButton.icon(
+              icon: const Icon(Icons.phone), label: Text(master.phone!),
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                final number = master.phone!.replaceAll(RegExp(r'[^0-9+]'), '');
+                try {
+                  if (!RegExp(r'^\+?[0-9]{5,15}$').hasMatch(number) ||
+                      !await launchUrl(Uri(scheme: 'tel', path: number))) {
+                    throw StateError('dialer unavailable');
+                  }
+                } catch (_) {
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('Не удалось открыть телефон')),
+                    );
+                  }
+                }
+              },
             ),
           ),
+        ],
 
         const SizedBox(height: 100), // отступ под FAB
       ],
@@ -396,6 +451,8 @@ class _MasterProfileScreenState extends State<MasterProfileScreen>
                     ),
                     Text(
                       catLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: c.primary,
                         fontSize: 11,
@@ -520,6 +577,7 @@ class _CreateRequestSheetState extends State<_CreateRequestSheet> {
   final _textCtrl = TextEditingController();
   String _category = '';
   bool _sending = false;
+  String? _error;
 
   static const _categoryKeys = [
     'PLUMBING',
@@ -547,10 +605,19 @@ class _CreateRequestSheetState extends State<_CreateRequestSheet> {
   }
 
   Future<void> _submit() async {
+    if (_sending) return;
     final text = _textCtrl.text.trim();
-    if (text.isEmpty || _category.isEmpty) return;
+    if (text.isEmpty || _category.isEmpty) {
+      setState(() => _error = 'Опишите проблему');
+      return;
+    }
 
-    setState(() => _sending = true);
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    final successBg = widget.colors.success;
     try {
       await RequestsRepository.instance.create(
         category: _category,
@@ -558,21 +625,18 @@ class _CreateRequestSheetState extends State<_CreateRequestSheet> {
       );
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: Text(AppLocalizations.tr('request_sent_success')),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: AppColors.of(context).success,
+          backgroundColor: successBg,
         ),
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        setState(() {
+          _error = e is ApiException ? e.message : 'Не удалось отправить заявку';
+        });
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -593,10 +657,11 @@ class _CreateRequestSheetState extends State<_CreateRequestSheet> {
           ),
         ),
         padding: const EdgeInsets.all(AppDimens.spaceMd),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             Center(
               child: Container(
                 width: 36,
@@ -693,6 +758,11 @@ class _CreateRequestSheetState extends State<_CreateRequestSheet> {
               ),
             ),
 
+            if (_error != null) ...[
+              const SizedBox(height: AppDimens.spaceSm),
+              Text(_error!, style: TextStyle(color: c.danger, fontSize: 13)),
+            ],
+
             const SizedBox(height: AppDimens.spaceMd),
 
             SizedBox(
@@ -716,6 +786,7 @@ class _CreateRequestSheetState extends State<_CreateRequestSheet> {
 
             const SizedBox(height: AppDimens.spaceXs),
           ],
+          ),
         ),
       ),
     );
@@ -755,12 +826,16 @@ class _Section extends StatelessWidget {
             children: [
               Icon(icon, size: 16, color: c.primary),
               const SizedBox(width: 6),
-              Text(
-                title,
-                style: TextStyle(
-                  color: c.textTertiary,
-                  fontSize: AppTypography.caption,
-                  fontWeight: AppTypography.semibold,
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: AppTypography.caption,
+                    fontWeight: AppTypography.semibold,
+                  ),
                 ),
               ),
             ],

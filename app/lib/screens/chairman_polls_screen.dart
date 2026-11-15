@@ -21,6 +21,8 @@ class _ChairmanPollsScreenState extends State<ChairmanPollsScreen> {
   String? _buildingId;
   bool _loading = true;
   String? _error;
+  int _loadSeq = 0;
+  bool _openingCreate = false;
 
   @override
   void initState() {
@@ -29,6 +31,7 @@ class _ChairmanPollsScreenState extends State<ChairmanPollsScreen> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
@@ -39,14 +42,14 @@ class _ChairmanPollsScreenState extends State<ChairmanPollsScreen> {
       final polls = buildingId != null
           ? await PollsRepository.instance.list(buildingId: buildingId)
           : <Poll>[];
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _buildingId = buildingId;
         _polls = polls;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -55,20 +58,27 @@ class _ChairmanPollsScreenState extends State<ChairmanPollsScreen> {
   }
 
   Future<void> _openCreate() async {
+    if (_loading || _openingCreate) return;
     if (_buildingId == null) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Сначала добавьте дом')));
       return;
     }
-    final created = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.of(context).card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
-      ),
-      builder: (_) => _CreatePollSheet(buildingId: _buildingId!),
-    );
+    _openingCreate = true;
+    bool? created;
+    try {
+      created = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.of(context).card,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
+        ),
+        builder: (_) => _CreatePollSheet(buildingId: _buildingId!),
+      );
+    } finally {
+      _openingCreate = false;
+    }
     if (created == true && mounted) _load();
   }
 
@@ -94,25 +104,41 @@ class _ChairmanPollsScreenState extends State<ChairmanPollsScreen> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDimens.spaceLg),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
-                          const SizedBox(height: AppDimens.spaceMd),
-                          OutlinedButton(onPressed: _load, child: const Text('Повторить')),
-                        ],
+                ? LayoutBuilder(
+                    builder: (_, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppDimens.spaceLg),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
+                                const SizedBox(height: AppDimens.spaceMd),
+                                OutlinedButton(onPressed: _load, child: const Text('Повторить')),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   )
                 : _polls.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppDimens.spaceLg),
-                          child: Text('Опросов пока нет — нажмите «+», чтобы создать первый',
-                              textAlign: TextAlign.center, style: TextStyle(color: c.textTertiary)),
+                    ? LayoutBuilder(
+                        builder: (_, constraints) => SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: SizedBox(
+                            height: constraints.maxHeight,
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppDimens.spaceLg),
+                                child: Text('Опросов пока нет — нажмите «+», чтобы создать первый',
+                                    textAlign: TextAlign.center, style: TextStyle(color: c.textTertiary)),
+                              ),
+                            ),
+                          ),
                         ),
                       )
                     : ListView(
@@ -158,10 +184,11 @@ class _ResultCard extends StatelessWidget {
                         fontSize: AppTypography.cardTitle,
                         fontWeight: AppTypography.bold)),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: (poll.closed ? c.textTertiary : c.success).withOpacity(0.12),
+                  color: (poll.closed ? c.textTertiary : c.success).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
@@ -189,13 +216,14 @@ class _ResultCard extends StatelessWidget {
   }
 
   Widget _bar(AppColors c, PollOption option, int totalVotes) {
-    final pct = totalVotes == 0 ? 0 : (option.votes / totalVotes * 100).round();
+    final pct = totalVotes <= 0 ? 0 : (option.votes / totalVotes * 100).round().clamp(0, 100);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
             Expanded(child: Text(option.label, style: TextStyle(color: c.textPrimary))),
+            const SizedBox(width: 8),
             Text('$pct% (${option.votes})',
                 style: TextStyle(color: c.textSecondary, fontSize: AppTypography.caption)),
           ],
@@ -254,6 +282,7 @@ class _CreatePollSheetState extends State<_CreatePollSheet> {
   }
 
   Future<void> _submit() async {
+    if (_isLoading) return;
     final question = _questionCtrl.text.trim();
     final options = _optionCtrls.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
     if (question.length < 3) {
@@ -276,9 +305,9 @@ class _CreatePollSheetState extends State<_CreatePollSheet> {
       );
       if (mounted) Navigator.pop(context, true);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'Не удалось создать опрос');
+      if (mounted) setState(() => _error = 'Не удалось создать опрос');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -337,7 +366,7 @@ class _CreatePollSheetState extends State<_CreatePollSheet> {
                     ),
                     if (_optionCtrls.length > 2)
                       IconButton(
-                        onPressed: () => _removeOption(i),
+                        onPressed: _isLoading ? null : () => _removeOption(i),
                         icon: Icon(Icons.close, color: c.textTertiary, size: 18),
                       ),
                   ],
@@ -345,7 +374,7 @@ class _CreatePollSheetState extends State<_CreatePollSheet> {
               ),
             if (_optionCtrls.length < 6)
               TextButton.icon(
-                onPressed: _addOption,
+                onPressed: _isLoading ? null : _addOption,
                 icon: Icon(Icons.add, color: c.primary, size: 18),
                 label: Text('Вариант', style: TextStyle(color: c.primary)),
                 style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),

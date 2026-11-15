@@ -20,6 +20,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   List<AppNotification> _items = [];
   bool _loading = true;
   String? _error;
+  int _loadSeq = 0;
+  bool _markingAll = false;
+  final Set<String> _markingIds = {};
   StreamSubscription<SseEvent>? _sub;
   Timer? _debounce;
 
@@ -41,19 +44,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final page = await NotificationsRepository.instance.list();
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _items = page.notifications;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -62,30 +66,57 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _markAllRead() async {
-    await NotificationsRepository.instance.markRead();
-    if (mounted) _load();
+    if (_markingAll) return;
+    setState(() => _markingAll = true);
+    try {
+      await NotificationsRepository.instance.markRead();
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Не удалось отметить прочитанным: $e'),
+          backgroundColor: AppColors.of(context).danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _markingAll = false);
+    }
   }
 
   Future<void> _onTapItem(AppNotification n) async {
-    if (!n.isRead) {
+    if (n.isRead || _markingIds.contains(n.id)) return;
+    setState(() => _markingIds.add(n.id));
+    try {
       await NotificationsRepository.instance.markRead(id: n.id);
-      if (mounted) {
-        setState(() {
-          final idx = _items.indexWhere((x) => x.id == n.id);
-          if (idx != -1) {
-            _items[idx] = AppNotification(
-              id: n.id,
-              type: n.type,
-              title: n.title,
-              body: n.body,
-              entityType: n.entityType,
-              entityId: n.entityId,
-              readAt: DateTime.now(),
-              createdAt: n.createdAt,
-            );
-          }
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        final idx = _items.indexWhere((x) => x.id == n.id);
+        if (idx != -1) {
+          final current = _items[idx];
+          _items[idx] = AppNotification(
+            id: current.id,
+            type: current.type,
+            title: current.title,
+            body: current.body,
+            entityType: current.entityType,
+            entityId: current.entityId,
+            readAt: DateTime.now(),
+            createdAt: current.createdAt,
+          );
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Не удалось отметить прочитанным: $e'),
+          backgroundColor: AppColors.of(context).danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _markingIds.remove(n.id));
     }
   }
 
@@ -99,12 +130,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       appBar: AppBar(
         backgroundColor: c.background,
         elevation: 0,
-        title: Text('Уведомления', style: TextStyle(color: c.textPrimary)),
+        title: Text(
+          'Уведомления',
+          style: TextStyle(color: c.textPrimary),
+          overflow: TextOverflow.ellipsis,
+        ),
         iconTheme: IconThemeData(color: c.textPrimary),
         actions: [
           if (hasUnread)
             TextButton(
-              onPressed: _markAllRead,
+              onPressed: _markingAll ? null : _markAllRead,
               child: Text('Прочитать всё', style: TextStyle(color: c.primary)),
             ),
         ],
@@ -118,6 +153,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 : _items.isEmpty
                     ? _EmptyState(color: c)
                     : ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.all(AppDimens.spaceMd),
                         itemCount: _items.length,
                         separatorBuilder: (_, __) => const SizedBox(height: AppDimens.spaceSm),
@@ -146,7 +182,7 @@ class _NotificationTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(AppDimens.spaceMd),
         decoration: BoxDecoration(
-          color: n.isRead ? c.card : c.primary.withOpacity(0.06),
+          color: n.isRead ? c.card : c.primary.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(AppDimens.radiusMd),
           border: Border.all(color: c.cardBorder),
         ),
@@ -198,13 +234,24 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppDimens.spaceLg),
-        child: Text(
-          'Пока нет уведомлений',
-          style: TextStyle(color: color.textTertiary, fontSize: AppTypography.body),
-        ),
+    return LayoutBuilder(
+      builder: (_, constraints) => ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(AppDimens.spaceLg),
+                child: Text(
+                  'Пока нет уведомлений',
+                  style: TextStyle(color: color.textTertiary, fontSize: AppTypography.body),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -218,17 +265,27 @@ class _ErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppDimens.spaceLg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(message, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
-            const SizedBox(height: AppDimens.spaceMd),
-            OutlinedButton(onPressed: onRetry, child: const Text('Повторить')),
-          ],
-        ),
+    return LayoutBuilder(
+      builder: (_, constraints) => ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(AppDimens.spaceLg),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(message, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
+                    const SizedBox(height: AppDimens.spaceMd),
+                    OutlinedButton(onPressed: onRetry, child: const Text('Повторить')),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

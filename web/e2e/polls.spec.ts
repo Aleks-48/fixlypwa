@@ -41,8 +41,8 @@ test("опрос: создание председателем → голос ж�
   // Создать опрос.
   await cp.getByTestId("nav-polls").click();
   await cp.waitForURL("**/polls");
-  await cp.getByTestId("poll-question").fill("Ставим шлагбаум?");
-  await cp.getByTestId("poll-submit").click();
+  await cp.getByPlaceholder("Например: Ремонт крыши в 3 подъезде").fill("Ставим шлагбаум?");
+  await cp.locator("form").filter({has: cp.getByPlaceholder("Например: Ремонт крыши в 3 подъезде")}).locator("button[type=submit]").click();
   await expect(cp.getByTestId("poll-card").filter({ hasText: "шлагбаум" })).toBeVisible();
 
   // Житель голосует с Главной.

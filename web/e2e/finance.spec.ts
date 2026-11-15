@@ -50,16 +50,18 @@ test("финансы: тариф → начисление → платёж → �
 
   await cp.getByTestId("charges-generate").click();
   await expect(cp.getByTestId("charges-result")).toContainText("Создано: 1");
-  await expect(cp.getByTestId("balance-debt").first()).toContainText("содержание 5000");
+  await expect(cp.getByText("Долг",{exact:true}).first().locator("xpath=following-sibling::p[1]")).toContainText(/5\s?000/);
 
   // Платёж 2000 → долг 3000.
   await cp.getByTestId("payment-amount").fill("2000");
   await cp.getByTestId("payment-submit").click();
-  await expect(cp.getByTestId("balance-debt").first()).toContainText("содержание 3000");
+  await expect(cp.getByText("Долг",{exact:true}).first().locator("xpath=following-sibling::p[1]")).toContainText(/3\s?000/);
 
   // Отчёт: сформировать → открыть → опубликовать.
   await cp.goto(`${buildingUrl}/reports`);
+  const generated = cp.waitForResponse(r => r.url().endsWith("/api/reports") && r.request().method() === "POST");
   await cp.getByTestId("report-generate").click();
+  expect((await generated).ok()).toBe(true);
   await expect(cp.getByTestId("report-row").first()).toBeVisible();
   await cp.getByTestId("report-publish").click();
   await expect(cp.getByTestId("report-published")).toBeVisible();

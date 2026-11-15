@@ -27,6 +27,7 @@ class _MastersMapScreenState extends State<MastersMapScreen>
 
   List<PublicMaster> _masters = [];
   bool _loading = true;
+  int _loadSeq = 0;
   String? _error;
 
   late final TextEditingController _searchCtrl;
@@ -59,6 +60,7 @@ class _MastersMapScreenState extends State<MastersMapScreen>
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
@@ -66,7 +68,7 @@ class _MastersMapScreenState extends State<MastersMapScreen>
     try {
       final cat = _selectedCategory == 'ALL' ? null : _selectedCategory;
       final result = await MasterRepository.instance.listPublicMasters(category: cat);
-      if (mounted) {
+      if (mounted && seq == _loadSeq) {
         setState(() {
           _masters = result;
           _loading = false;
@@ -74,7 +76,7 @@ class _MastersMapScreenState extends State<MastersMapScreen>
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && seq == _loadSeq) {
         setState(() {
           _error = e.toString();
           _loading = false;
@@ -250,7 +252,7 @@ class _MastersMapScreenState extends State<MastersMapScreen>
 
   Widget _buildError(AppColors c) {
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppDimens.spaceLg),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -259,6 +261,7 @@ class _MastersMapScreenState extends State<MastersMapScreen>
             const SizedBox(height: AppDimens.spaceMd),
             Text(
               AppLocalizations.tr('status_error'),
+              textAlign: TextAlign.center,
               style: TextStyle(color: c.textSecondary),
             ),
             const SizedBox(height: AppDimens.spaceSm),
@@ -278,17 +281,32 @@ class _MastersMapScreenState extends State<MastersMapScreen>
   Widget _buildListView(AppColors c) {
     final list = _filtered;
     if (list.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(LucideIcons.userX, color: c.textTertiary, size: 48),
-            const SizedBox(height: AppDimens.spaceMd),
-            Text(
-              AppLocalizations.tr('masters_not_found'),
-              style: TextStyle(color: c.textSecondary, fontSize: 15),
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppDimens.spaceLg),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(LucideIcons.userX, color: c.textTertiary, size: 48),
+                      const SizedBox(height: AppDimens.spaceMd),
+                      Text(
+                        AppLocalizations.tr('masters_not_found'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: c.textSecondary, fontSize: 15),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ],
+          ),
         ),
       );
     }
@@ -309,8 +327,23 @@ class _MastersMapScreenState extends State<MastersMapScreen>
   // ── Карта ───────────────────────────────────────────────────────────────────
 
   Widget _buildMapView(AppColors c) {
-    final list = _filtered;
-
+    final list = _filtered.where((m) => m.lat != null && m.lng != null &&
+      m.lat!.abs() <= 90 && m.lng!.abs() <= 180).toList();
+    if (list.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(AppDimens.spaceLg),
+          child: Text(
+            'Мастера пока не указали координаты',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    final north = list.map((m) => m.lat!).reduce(max);
+    final south = list.map((m) => m.lat!).reduce(min);
+    final west = list.map((m) => m.lng!).reduce(min);
+    final east = list.map((m) => m.lng!).reduce(max);
     return Stack(
       children: [
         // Фон с сеткой
@@ -322,42 +355,21 @@ class _MastersMapScreenState extends State<MastersMapScreen>
           ),
         ),
 
-        // Маркер «Ваш дом»
-        Align(
-          alignment: Alignment.center,
-          child: _HomeMarker(colors: c),
-        ),
-
-        // Маркеры мастеров (детерминированные позиции по hash ID)
         LayoutBuilder(
           builder: (context, constraints) {
             return Stack(
               children: list.map((master) {
-                double dx, dy;
-                if (master.lat != null && master.lng != null) {
-                  // Преобразуем реальные координаты Кокшетау в относительные координаты на Canvas
-                  // Центр ~ (53.2848, 69.3775)
-                  const centerLat = 53.2848;
-                  const centerLng = 69.3775;
-                  dx = 0.5 + (master.lng! - centerLng) * 15.0;
-                  dy = 0.5 - (master.lat! - centerLat) * 15.0;
-                  dx = dx.clamp(0.08, 0.92);
-                  dy = dy.clamp(0.08, 0.92);
-                } else {
-                  final rng = Random(master.id.hashCode);
-                  do {
-                    dx = 0.1 + rng.nextDouble() * 0.8;
-                    dy = 0.1 + rng.nextDouble() * 0.8;
-                  } while ((dx - 0.5).abs() < 0.12 && (dy - 0.5).abs() < 0.12);
-                }
-
-                final x = constraints.maxWidth * dx;
-                final y = constraints.maxHeight * dy;
+                final dx = east == west ? 0.5 : 0.1 + 0.8 * (master.lng! - west) / (east - west);
+                final dy = north == south ? 0.5 : 0.1 + 0.8 * (north - master.lat!) / (north - south);
+                final maxX = max(4.0, constraints.maxWidth - 52);
+                final maxY = max(4.0, constraints.maxHeight - 52);
+                final x = (constraints.maxWidth * dx - 22).clamp(4.0, maxX);
+                final y = (constraints.maxHeight * dy - 22).clamp(4.0, maxY);
                 final isSelected = _selectedMaster?.id == master.id;
 
                 return Positioned(
-                  left: x - 22,
-                  top: y - 22,
+                  left: x,
+                  top: y,
                   child: GestureDetector(
                     onTap: () {
                       setState(() {
@@ -411,22 +423,6 @@ class _MastersMapScreenState extends State<MastersMapScreen>
               onClose: () => setState(() => _selectedMaster = null),
             ),
           ),
-
-        // Пустой список
-        if (list.isEmpty)
-          Center(
-            child: Container(
-              padding: const EdgeInsets.all(AppDimens.spaceMd),
-              decoration: BoxDecoration(
-                color: c.card,
-                borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-              ),
-              child: Text(
-                AppLocalizations.tr('masters_not_found'),
-                style: TextStyle(color: c.textSecondary),
-              ),
-            ),
-          ),
       ],
     );
   }
@@ -435,53 +431,6 @@ class _MastersMapScreenState extends State<MastersMapScreen>
 // =============================================================================
 //  Вспомогательные виджеты
 // =============================================================================
-
-class _HomeMarker extends StatelessWidget {
-  final AppColors colors;
-  const _HomeMarker({required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = colors;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: c.primary,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: c.primary.withValues(alpha: 0.4),
-                blurRadius: 16,
-                spreadRadius: 4,
-              ),
-            ],
-          ),
-          child: const Icon(LucideIcons.home, color: Colors.white, size: 22),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-          decoration: BoxDecoration(
-            color: c.card,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: c.cardBorder),
-          ),
-          child: Text(
-            AppLocalizations.tr('your_home'),
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 11,
-              fontWeight: AppTypography.bold,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _MasterCard extends StatelessWidget {
   final PublicMaster master;
@@ -538,6 +487,8 @@ class _MasterCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     catLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.primary,
                       fontSize: AppTypography.caption,
@@ -570,11 +521,15 @@ class _MasterCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      Text(
-                        '(${master.reviewsCount} ${AppLocalizations.tr("reviews_count")})',
-                        style: TextStyle(
-                          color: c.textTertiary,
-                          fontSize: 12,
+                      Flexible(
+                        child: Text(
+                          '(${master.reviewsCount} ${AppLocalizations.tr("reviews_count")})',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: c.textTertiary,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ],
@@ -647,6 +602,8 @@ class _SelectedMasterCard extends StatelessWidget {
                 children: [
                   Text(
                     master.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.textPrimary,
                       fontWeight: AppTypography.bold,
@@ -655,6 +612,8 @@ class _SelectedMasterCard extends StatelessWidget {
                   ),
                   Text(
                     catLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.primary,
                       fontSize: AppTypography.caption,
@@ -677,8 +636,10 @@ class _SelectedMasterCard extends StatelessWidget {
                 ],
               ),
             ),
+            const SizedBox(width: 8),
             Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 GestureDetector(
                   onTap: onClose,
@@ -688,7 +649,8 @@ class _SelectedMasterCard extends StatelessWidget {
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: c.primary,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(AppDimens.radiusMd),
                     ),

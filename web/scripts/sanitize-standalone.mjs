@@ -10,15 +10,13 @@ if (path.dirname(dist) !== project || !path.basename(dist).startsWith(".next")) 
 }
 const root = path.join(dist, "standalone");
 if (!fs.existsSync(root)) throw new Error("Standalone build is missing");
-// Next 15's Windows trace can omit runtime modules required by its own adapter.
+// Next 15 tracing can omit adapter runtime modules on Windows and Linux/ARM64.
 // Keep the installed framework runtime complete; this contains package code only.
-if (process.platform === "win32") {
-  fs.cpSync(
-    path.join(project, "node_modules/next/dist"),
-    path.join(root, "node_modules/next/dist"),
-    { recursive: true },
-  );
-}
+fs.cpSync(
+  path.join(project, "node_modules/next/dist"),
+  path.join(root, "node_modules/next/dist"),
+  { recursive: true },
+);
 const targets = [
   "storage",
   "public/uploads",

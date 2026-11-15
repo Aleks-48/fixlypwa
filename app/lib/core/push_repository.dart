@@ -1,5 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'dart:io';
 import 'dart:async';
 import 'api_client.dart';
 
@@ -12,41 +13,67 @@ class PushRepository {
   String? _registeredToken;
   StreamSubscription<String>? _refreshSub;
 
+  Timer? retry;
+  int generation = 0;
+
   Future<void> register() async {
-    if (dotenv.env['ENABLE_PUSH'] == 'false') return;
+    if (Firebase.apps.isEmpty) return;
+    final current = ++generation;
+    retry?.cancel();
+    await _refreshSub?.cancel();
+    if (current != generation) return;
     final messaging = FirebaseMessaging.instance;
-    final settings = await messaging.requestPermission();
-    if (settings.authorizationStatus == AuthorizationStatus.denied) return;
-
-    final token = await messaging.getToken();
-    if (token != null && token != _registeredToken) {
-      await _send(token);
-      _registeredToken = token;
-    }
-
-    _refreshSub?.cancel();
-    _refreshSub = messaging.onTokenRefresh.listen((t) async {
-      if (t != _registeredToken) {
-        await _send(t);
-        _registeredToken = t;
+    try {
+      final permission = await messaging.requestPermission();
+      if (permission.authorizationStatus == AuthorizationStatus.denied ||
+          current != generation) {
+        return;
       }
-    });
+      _refreshSub = messaging.onTokenRefresh.listen((_) {
+        if (generation == current) register();
+      });
+      if (Platform.isIOS && await messaging.getAPNSToken() == null) {
+        if (generation == current) {
+          retry = Timer(const Duration(seconds: 20), register);
+        }
+        return;
+      }
+      final token = await messaging.getToken();
+      if (current != generation || token == null || token == _registeredToken) {
+        return;
+      }
+      await _send(token);
+      if (current == generation) _registeredToken = token;
+    } catch (_) {
+      if (generation == current) {
+        retry = Timer(const Duration(seconds: 30), register);
+      }
+    }
   }
 
   Future<void> unregister() async {
-    _refreshSub?.cancel();
+    generation++;
+    retry?.cancel();
+    await _refreshSub?.cancel();
     _refreshSub = null;
     final token = _registeredToken;
     _registeredToken = null;
-    if (token == null) return;
+    if (Firebase.apps.isEmpty) return;
     try {
-      await ApiClient.instance.delete('/api/push/fcm-token', body: {'token': token});
+      if (token != null) {
+        await ApiClient.instance
+            .delete('/api/push/fcm-token', body: {'token': token});
+      }
+    } catch (_) {}
+    try {
+      await FirebaseMessaging.instance
+          .deleteToken()
+          .timeout(const Duration(seconds: 5));
     } catch (_) {}
   }
 
   Future<void> _send(String token) async {
-    try {
-      await ApiClient.instance.post('/api/push/fcm-token', body: {'token': token});
-    } catch (_) {}
+    await ApiClient.instance
+        .post('/api/push/fcm-token', body: {'token': token});
   }
 }

@@ -1,6 +1,7 @@
 import { chairmanContext } from "@/lib/auth/context";
+import { prisma } from "@/lib/db/prisma";
+import { forTenant } from "@/lib/db/tenant";
 import { Errors } from "@/lib/http";
-import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -8,10 +9,32 @@ export const dynamic = "force-dynamic";
 
 const Query = z.object({
   plan: z.enum(["standard", "vip", "max"]).default("standard"),
-  apartments: z.coerce.number().min(1).default(50),
-  months: z.coerce.number().min(1).max(12).default(1),
-  useRef: z.coerce.boolean().default(false),
+  apartments: z.coerce.number().int().min(1).max(100000).default(50),
+  months: z.coerce.number().int().min(1).max(12).default(1),
+  useRef: z
+    .union([z.boolean(), z.enum(["true", "false", "1", "0", ""])])
+    .optional()
+    .transform((v) => v === true || v === "true" || v === "1"),
 });
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (ch) => {
+    switch (ch) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return ch;
+    }
+  });
+}
 
 // GET /api/pricing/invoice?plan=standard&apartments=50&months=1
 export async function GET(req: Request) {
@@ -41,15 +64,32 @@ export async function GET(req: Request) {
   };
 
   const effectivePrice = plan === "standard" && useRef ? 50 : basePrices[plan];
-  const totalAmount = effectivePrice * apartments * months;
 
-  // Данные ОСИ
-  const osi = await prisma.osi.findUnique({
-    where: { id: ctx.osiId },
-  });
+  // Данные ОСИ и фактическое число квартир в БД (под RLS)
+  const [osi, dbApartmentCount] = await Promise.all([
+    prisma.osi.findUnique({
+      where: { id: ctx.osiId },
+    }),
+    forTenant(ctx.osiId, (tx) =>
+      tx.apartment.count({
+        where: { osiId: ctx.osiId },
+      }),
+    ),
+  ]);
+
+  const effectiveApartments =
+    dbApartmentCount > 0 ? Math.max(apartments, dbApartmentCount) : apartments;
+  const totalAmount = effectivePrice * effectiveApartments * months;
 
   const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
   const dateStr = new Date().toLocaleDateString("ru-RU");
+
+  const safeInvoiceNumber = escapeHtml(invoiceNumber);
+  const safeDateStr = escapeHtml(dateStr);
+  const safeOsiName = escapeHtml(osi?.name || "ОСИ / НСУ / УК");
+  const safeOsiBin = escapeHtml(osi?.bin || "Не указан");
+  const safeOsiAddress = escapeHtml(osi?.address || "Казахстан");
+  const safePlanName = escapeHtml(planNames[plan]);
 
   // Генерация минимального HTML для печати/сохранения в PDF
   const html = `
@@ -57,7 +97,7 @@ export async function GET(req: Request) {
     <html lang="ru">
     <head>
       <meta charset="UTF-8">
-      <title>Счет на оплату ${invoiceNumber}</title>
+      <title>Счет на оплату ${safeInvoiceNumber}</title>
       <style>
         body { font-family: system-ui, sans-serif; padding: 40px; color: #111; max-width: 800px; margin: 0 auto; }
         .header { display: flex; justify-content: space-between; border-bottom: 2px solid #6B7A47; padding-bottom: 20px; }
@@ -74,8 +114,8 @@ export async function GET(req: Request) {
     <body>
       <div class="header">
         <div>
-          <div class="title">СЧЕТ НА ОПЛАТУ № ${invoiceNumber}</div>
-          <div>от ${dateStr} г.</div>
+          <div class="title">СЧЕТ НА ОПЛАТУ № ${safeInvoiceNumber}</div>
+          <div>от ${safeDateStr} г.</div>
         </div>
         <div style="text-align: right;">
           <strong>Исполнитель:</strong> ТОО "Fixly OSI"<br>
@@ -87,9 +127,9 @@ export async function GET(req: Request) {
       <div class="details">
         <div class="box">
           <strong>Заказчик / Заплательщик:</strong><br>
-          ОСИ: ${osi?.name || "ОСИ / НСУ / УК"}<br>
-          БИН/ИИН: ${osi?.bin || "Не указан"}<br>
-          Адрес: ${osi?.address || "Казахстан"}
+          ОСИ: ${safeOsiName}<br>
+          БИН/ИИН: ${safeOsiBin}<br>
+          Адрес: ${safeOsiAddress}
         </div>
         <div class="box">
           <strong>Основание:</strong><br>
@@ -112,8 +152,8 @@ export async function GET(req: Request) {
         <tbody>
           <tr>
             <td>1</td>
-            <td>Подписка на платформу Fixly (${planNames[plan]})</td>
-            <td>${apartments}</td>
+            <td>Подписка на платформу Fixly (${safePlanName})</td>
+            <td>${effectiveApartments}</td>
             <td>${months}</td>
             <td>${effectivePrice} ₸</td>
             <td>${totalAmount.toLocaleString("ru-RU")} ₸</td>
@@ -136,6 +176,7 @@ export async function GET(req: Request) {
     status: 200,
     headers: {
       "Content-Type": "text/html; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

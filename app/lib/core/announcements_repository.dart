@@ -23,13 +23,13 @@ class Announcement {
   });
 
   factory Announcement.fromJson(Map<String, dynamic> json) => Announcement(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        body: json['body'] as String,
-        isPinned: json['isPinned'] as bool,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        readCount: json['readCount'] as int,
-        readByViewer: json['readByViewer'] as bool,
+        id: ApiJson.asNonEmptyString(json['id']),
+        title: ApiJson.asString(json['title']),
+        body: ApiJson.asString(json['body']),
+        isPinned: ApiJson.asBool(json['isPinned']),
+        createdAt: ApiJson.asDateTime(json['createdAt']),
+        readCount: ApiJson.asInt(json['readCount']),
+        readByViewer: ApiJson.asBool(json['readByViewer']),
       );
 }
 
@@ -39,16 +39,18 @@ class AnnouncementsRepository {
 
   final _api = ApiClient.instance;
 
-  Future<List<Announcement>> list() async {
-    final data = await _api.get('/api/announcements') as Map<String, dynamic>;
-    return (data['announcements'] as List)
-        .cast<Map<String, dynamic>>()
+  Future<List<Announcement>> list({String? buildingId}) async {
+    final path = buildingId != null
+        ? '/api/announcements?buildingId=${Uri.encodeQueryComponent(buildingId)}'
+        : '/api/announcements';
+    final data = ApiJson.asMap(await _api.get(path));
+    return ApiJson.asMapList(data['announcements'])
         .map(Announcement.fromJson)
         .toList();
   }
 
   Future<void> markRead(String id) async {
-    await _api.post('/api/announcements/$id/read');
+    await _api.post('/api/announcements/${Uri.encodeComponent(id)}/read');
   }
 
   // Председатель публикует объявление дома (REQ-143). buildingId — сервер не выводит его сам
@@ -67,5 +69,7 @@ class AnnouncementsRepository {
     });
   }
 
-  Future<void> delete(String id) async {}
+  Future<void> delete(String id) async {
+    await _api.delete('/api/announcements?id=${Uri.encodeComponent(id)}');
+  }
 }

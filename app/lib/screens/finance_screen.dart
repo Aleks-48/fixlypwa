@@ -23,6 +23,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   ResidentFinance? _data;
   bool _loading = true;
   String? _error;
+  int _loadSeq = 0;
 
   @override
   void initState() {
@@ -31,21 +32,23 @@ class _FinanceScreenState extends State<FinanceScreen> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final data = await FinanceRepository.instance.get();
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _data = data;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
-        _error = e.toString();
+        _error = e is ApiException ? e.message : e.toString();
         _loading = false;
       });
     }
@@ -67,28 +70,44 @@ class _FinanceScreenState extends State<FinanceScreen> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDimens.spaceLg),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
-                          const SizedBox(height: AppDimens.spaceMd),
-                          OutlinedButton(onPressed: _load, child: const Text('Повторить')),
-                        ],
+                ? LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppDimens.spaceLg),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
+                                const SizedBox(height: AppDimens.spaceMd),
+                                OutlinedButton(onPressed: _load, child: const Text('Повторить')),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   )
                 : _data?.balances == null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppDimens.spaceLg),
-                          child: Text(
-                            'По вашей квартире пока нет лицевого счёта — начисления появятся '
-                            'после их формирования председателем.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body),
+                    ? LayoutBuilder(
+                        builder: (context, constraints) => SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppDimens.spaceLg),
+                                child: Text(
+                                  'По вашей квартире пока нет лицевого счёта — начисления появятся '
+                                  'после их формирования председателем.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       )
@@ -98,21 +117,30 @@ class _FinanceScreenState extends State<FinanceScreen> {
   }
 }
 
-class _Content extends StatelessWidget {
+class _Content extends StatefulWidget {
   final ResidentFinance data;
   final AppColors colors;
   final VoidCallback onPaid;
   const _Content({required this.data, required this.colors, required this.onPaid});
 
   @override
+  State<_Content> createState() => _ContentState();
+}
+
+class _ContentState extends State<_Content> {
+  bool _openingPaySheet = false;
+
+  @override
   Widget build(BuildContext context) {
-    final c = colors;
+    final c = widget.colors;
+    final data = widget.data;
     final totalDebt = data.balances!.totalDebt;
     final lastPeriod = data.charges.isNotEmpty ? data.charges.first.period : null;
     final lastCharges =
         lastPeriod == null ? <Charge>[] : data.charges.where((ch) => ch.period == lastPeriod).toList();
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(AppDimens.spaceMd),
       children: [
         // Карточка долга — заливка primary, как на сайте (Card bg-primary).
@@ -141,13 +169,14 @@ class _Content extends StatelessWidget {
                   width: double.infinity,
                   height: AppDimens.primaryTapTarget,
                   child: ElevatedButton(
-                    onPressed: () => _openPaySheet(context, totalDebt),
+                    onPressed: _openingPaySheet ? null : () => _openPaySheet(context, totalDebt),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(AppDimens.radiusMd)),
                     ),
                     child: Text('Оплатить онлайн',
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: c.primary, fontWeight: AppTypography.bold)),
                   ),
                 ),
@@ -185,10 +214,12 @@ class _Content extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(tariffCategoryLabels[ch.tariffCategory] ?? ch.tariffCategory,
-                            style: TextStyle(color: c.textSecondary)),
+                        Expanded(
+                          child: Text(tariffCategoryLabels[ch.tariffCategory] ?? ch.tariffCategory,
+                              style: TextStyle(color: c.textSecondary)),
+                        ),
+                        const SizedBox(width: 8),
                         Text(_money(ch.amount),
                             style: TextStyle(color: c.textPrimary, fontWeight: AppTypography.semibold)),
                       ],
@@ -196,10 +227,12 @@ class _Content extends StatelessWidget {
                   ),
                 Divider(color: c.divider),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Итого',
-                        style: TextStyle(color: c.textPrimary, fontWeight: AppTypography.bold)),
+                    Expanded(
+                      child: Text('Итого',
+                          style: TextStyle(color: c.textPrimary, fontWeight: AppTypography.bold)),
+                    ),
+                    const SizedBox(width: 8),
                     Text(
                       _money(lastCharges.fold<double>(0, (s, ch) => s + ch.amount)),
                       style: TextStyle(color: c.textPrimary, fontWeight: AppTypography.extraBold),
@@ -241,7 +274,7 @@ class _Content extends StatelessWidget {
                           width: 36,
                           height: 36,
                           decoration:
-                              BoxDecoration(color: c.success.withOpacity(0.12), shape: BoxShape.circle),
+                              BoxDecoration(color: c.success.withValues(alpha: 0.12), shape: BoxShape.circle),
                           child: Icon(LucideIcons.check, size: 16, color: c.success),
                         ),
                         const SizedBox(width: AppDimens.spaceSm),
@@ -257,6 +290,7 @@ class _Content extends StatelessWidget {
                             ],
                           ),
                         ),
+                        const SizedBox(width: 8),
                         Text(_money(p.amount),
                             style: TextStyle(color: c.textPrimary, fontWeight: AppTypography.bold)),
                       ],
@@ -270,16 +304,28 @@ class _Content extends StatelessWidget {
   }
 
   Future<void> _openPaySheet(BuildContext context, double amount) async {
-    final paid = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.of(context).card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
-      ),
-      builder: (_) => _PayOnlineSheet(amount: amount),
-    );
-    if (paid == true) onPaid();
+    if (_openingPaySheet) return;
+    setState(() => _openingPaySheet = true);
+    var paid = false;
+    try {
+      final result = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.of(context).card,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
+        ),
+        builder: (_) => _PayOnlineSheet(
+          amount: amount,
+          onPaidSuccess: () => paid = true,
+        ),
+      );
+      if ((result == true || paid) && mounted) {
+        widget.onPaid();
+      }
+    } finally {
+      if (mounted) setState(() => _openingPaySheet = false);
+    }
   }
 }
 
@@ -289,7 +335,8 @@ class _Content extends StatelessWidget {
 // на экране раньше, чем пользователь увидит галочку).
 class _PayOnlineSheet extends StatefulWidget {
   final double amount;
-  const _PayOnlineSheet({required this.amount});
+  final VoidCallback? onPaidSuccess;
+  const _PayOnlineSheet({required this.amount, this.onPaidSuccess});
 
   @override
   State<_PayOnlineSheet> createState() => _PayOnlineSheetState();
@@ -302,22 +349,21 @@ class _PayOnlineSheetState extends State<_PayOnlineSheet> {
   String? _error;
 
   // Данные тестовой карты
-  String _cardNumber = "4400 4301 2345 6789";
-  String _cardExpiry = "12/28";
-  String _cardCvc = "777";
+  final String _cardNumber = "4400 4301 2345 6789";
+  final String _cardExpiry = "12/28";
+  final String _cardCvc = "777";
 
   Future<void> _pay() async {
+    if (_busy || _result != null) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      // Имитация времени процессинга банка
-      await Future.delayed(const Duration(milliseconds: 1200));
-
       final result = await PaymentsRepository.instance
           .checkout(method: _method, expectedAmount: widget.amount);
       if (!mounted) return;
+      widget.onPaidSuccess?.call();
       setState(() {
         _result = result;
         _busy = false;
@@ -340,7 +386,7 @@ class _PayOnlineSheetState extends State<_PayOnlineSheet> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    return Padding(
+    return SingleChildScrollView(
       padding: EdgeInsets.only(
         left: AppDimens.spaceLg,
         right: AppDimens.spaceLg,
@@ -357,7 +403,7 @@ class _PayOnlineSheetState extends State<_PayOnlineSheet> {
                 Container(
                   width: 48,
                   height: 48,
-                  decoration: BoxDecoration(color: c.success.withOpacity(0.15), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: c.success.withValues(alpha: 0.15), shape: BoxShape.circle),
                   child: Icon(LucideIcons.check, color: c.success, size: 26),
                 ),
                 const SizedBox(width: AppDimens.spaceSm),
@@ -390,18 +436,34 @@ class _PayOnlineSheetState extends State<_PayOnlineSheet> {
               child: Column(
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Чек:', style: TextStyle(color: c.textSecondary, fontSize: 12)),
-                      Text(_result!.gatewayRef ?? 'FIX-APP-7721', style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.bold, fontSize: 12)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          (_result!.gatewayRef != null && _result!.gatewayRef!.isNotEmpty)
+                              ? _result!.gatewayRef!
+                              : '—',
+                          textAlign: TextAlign.end,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Способ:', style: TextStyle(color: c.textSecondary, fontSize: 12)),
-                      Text(_method == 'test_qr' ? 'Kaspi QR' : 'Банковская карта', style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.bold, fontSize: 12)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _method == 'test_qr' ? 'Kaspi QR' : 'Банковская карта',
+                          textAlign: TextAlign.end,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -412,20 +474,26 @@ class _PayOnlineSheetState extends State<_PayOnlineSheet> {
               width: double.infinity,
               height: AppDimens.primaryTapTarget,
               child: ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
+                onPressed: () {
+                  if (Navigator.canPop(context)) Navigator.pop(context, true);
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: c.success,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.radiusMd)),
                 ),
-                child: const Text('Закрыть чек', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                child: const Text('Закрыть чек',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ),
           ] else ...[
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Оплата онлайн',
-                    style: TextStyle(color: c.textPrimary, fontSize: 18, fontWeight: AppTypography.bold)),
+                Expanded(
+                  child: Text('Оплата онлайн',
+                      style: TextStyle(color: c.textPrimary, fontSize: 18, fontWeight: AppTypography.bold)),
+                ),
+                const SizedBox(width: 8),
                 Text(_money(widget.amount),
                     style: TextStyle(color: c.success, fontSize: 18, fontWeight: AppTypography.extraBold)),
               ],
@@ -439,7 +507,7 @@ class _PayOnlineSheetState extends State<_PayOnlineSheet> {
                     icon: LucideIcons.creditCard,
                     selected: _method == 'test_card',
                     colors: c,
-                    onTap: () => setState(() => _method = 'test_card'),
+                    onTap: _busy ? null : () => setState(() => _method = 'test_card'),
                   ),
                 ),
                 const SizedBox(width: AppDimens.spaceSm),
@@ -449,7 +517,7 @@ class _PayOnlineSheetState extends State<_PayOnlineSheet> {
                     icon: LucideIcons.qrCode,
                     selected: _method == 'test_qr',
                     colors: c,
-                    onTap: () => setState(() => _method = 'test_qr'),
+                    onTap: _busy ? null : () => setState(() => _method = 'test_qr'),
                   ),
                 ),
               ],
@@ -487,11 +555,12 @@ class _PayOnlineSheetState extends State<_PayOnlineSheet> {
               ),
             ] else ...[
               Container(
+                width: double.infinity,
                 padding: const EdgeInsets.all(AppDimens.spaceMd),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.06),
+                  color: Colors.red.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                  border: Border.all(color: Colors.red.withOpacity(0.2)),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
                 ),
                 child: Column(
                   children: [
@@ -526,10 +595,16 @@ class _PayOnlineSheetState extends State<_PayOnlineSheet> {
                         children: [
                           SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
                           SizedBox(width: 10),
-                          Text('Проведение оплаты...', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          Flexible(
+                            child: Text('Проведение оплаты...',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          ),
                         ],
                       )
                     : Text('Оплатить ${_money(widget.amount)}',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                         style: const TextStyle(color: Colors.white, fontWeight: AppTypography.bold)),
               ),
             ),
@@ -545,7 +620,7 @@ class _MethodButton extends StatelessWidget {
   final IconData icon;
   final bool selected;
   final AppColors colors;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _MethodButton({
     required this.label,
@@ -564,7 +639,7 @@ class _MethodButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: selected ? c.primary.withOpacity(0.1) : c.surfaceVariant,
+          color: selected ? c.primary.withValues(alpha: 0.1) : c.surfaceVariant,
           borderRadius: BorderRadius.circular(AppDimens.radiusMd),
           border: Border.all(color: selected ? c.primary : c.cardBorder),
         ),

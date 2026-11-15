@@ -25,7 +25,7 @@ async function loginByOtp(page: Page, phone: string) {
 }
 
 test("админка: гейт по isSuperadmin + одобрение мастера через UI", async ({ browser }) => {
-  test.setTimeout(60_000); // make-superadmin шелл-скриптом (npx tsx) добавляет время старта
+  test.setTimeout(120_000); // make-superadmin шелл-скриптом (npx tsx) добавляет время старта
 
   const adminPhone = uniquePhone();
   const masterPhone = uniquePhone();

@@ -25,14 +25,14 @@ class AppNotification {
   bool get isRead => readAt != null;
 
   factory AppNotification.fromJson(Map<String, dynamic> json) => AppNotification(
-        id: json['id'] as String,
-        type: json['type'] as String,
-        title: json['title'] as String,
-        body: json['body'] as String,
-        entityType: json['entityType'] as String?,
-        entityId: json['entityId'] as String?,
-        readAt: json['readAt'] != null ? DateTime.parse(json['readAt'] as String) : null,
-        createdAt: DateTime.parse(json['createdAt'] as String),
+        id: ApiJson.asNonEmptyString(json['id']),
+        type: ApiJson.asString(json['type']),
+        title: ApiJson.asString(json['title']),
+        body: ApiJson.asString(json['body']),
+        entityType: ApiJson.asNullableString(json['entityType']),
+        entityId: ApiJson.asNullableString(json['entityId']),
+        readAt: ApiJson.asNullableDateTime(json['readAt']),
+        createdAt: ApiJson.asDateTime(json['createdAt']),
       );
 }
 
@@ -49,13 +49,12 @@ class NotificationsRepository {
   final _api = ApiClient.instance;
 
   Future<NotificationsPage> list() async {
-    final data = await _api.get('/api/notifications') as Map<String, dynamic>;
+    final data = ApiJson.asMap(await _api.get('/api/notifications'));
     return NotificationsPage(
-      notifications: (data['notifications'] as List)
-          .cast<Map<String, dynamic>>()
+      notifications: ApiJson.asMapList(data['notifications'])
           .map(AppNotification.fromJson)
           .toList(),
-      unread: data['unread'] as int,
+      unread: ApiJson.asInt(data['unread']),
     );
   }
 

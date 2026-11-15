@@ -6,7 +6,7 @@ import { saveFcmToken, removeFcmToken } from "@/lib/notifications/fcm";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const Body = z.object({ token: z.string().min(1) });
+const Body = z.object({ token: z.string().trim().min(1).max(4096) });
 
 // POST /api/push/fcm-token — сохранить FCM-токен мобильного клиента (REQ-127, ADR-0012 §5).
 // Достаточно входа (не memberContext): токен — identity, привязан к пользователю, не к ОСИ.

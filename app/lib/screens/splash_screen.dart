@@ -92,20 +92,24 @@ class _SplashScreenState extends State<SplashScreen>
     // 1. Фон
     _bgCtrl.forward();
     await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted) return;
 
     // 2. Логотип
     _logoCtrl.forward();
     await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
 
     // 3. Пульс (бесконечно)
     _pulseCtrl.repeat();
 
     // 4. Текст
     await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
     _textCtrl.forward();
 
     // 5. Держим сплэш + проверяем сессию
     await Future.delayed(const Duration(milliseconds: 1800));
+    if (!mounted) return;
     await _checkSessionAndNavigate();
   }
 
@@ -229,7 +233,7 @@ class _SplashScreenState extends State<SplashScreen>
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: c.primary.withOpacity(0.5),
+                                  color: c.primary.withValues(alpha: 0.5),
                                   blurRadius: 30,
                                   spreadRadius: 5,
                                 ),
@@ -274,10 +278,10 @@ class _SplashScreenState extends State<SplashScreen>
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 16, vertical: 6),
                               decoration: BoxDecoration(
-                                color: c.primary.withOpacity(0.15),
+                                color: c.primary.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(
-                                  color: c.primary.withOpacity(0.3),
+                                  color: c.primary.withValues(alpha: 0.3),
                                 ),
                               ),
                               child: Text(

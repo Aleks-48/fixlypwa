@@ -1,7 +1,7 @@
 name: fixly_app
 description: "A new Flutter project."
 publish_to: 'none'
-version: 2.0.0+5  # срез 26 — миграция на fixlypwa завершена, Supabase убран (REQ-134/135)
+version: 2.0.0+6  # срез 26 — миграция на fixlypwa завершена, Supabase убран (REQ-134/135)
 
 environment:
   sdk: '>=3.3.0 <4.0.0' # Поднял версию для совместимости с новыми пакетами
@@ -31,6 +31,10 @@ dependencies:
   image_picker: ^1.2.3
   open_filex: ^4.7.0
   path_provider: ^2.1.6
+  pdf: ^3.12.0
+  record: ^6.2.1
+  html: ^0.15.7
+  flutter_webrtc: ^1.6.3
 
 dev_dependencies:
   flutter_test:
@@ -42,6 +46,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+    - assets/receipt/
     - .env
 
 flutter_launcher_icons:

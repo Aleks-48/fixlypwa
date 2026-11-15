@@ -43,6 +43,7 @@ class _CreateOsiScreenState extends State<CreateOsiScreen> {
   }
 
   Future<void> _createOsi() async {
+    if (_isLoading) return;
     if (!(_osiFormKey.currentState?.validate() ?? false)) return;
     setState(() {
       _isLoading = true;
@@ -56,15 +57,16 @@ class _CreateOsiScreenState extends State<CreateOsiScreen> {
       );
       if (mounted) setState(() => _step = _Step.building);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'Ошибка подключения');
+      if (mounted) setState(() => _error = 'Ошибка подключения');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _createBuildingAndFinish() async {
+    if (_isLoading) return;
     if (!(_buildingFormKey.currentState?.validate() ?? false)) return;
     setState(() {
       _isLoading = true;
@@ -74,9 +76,9 @@ class _CreateOsiScreenState extends State<CreateOsiScreen> {
       await OsiRepository.instance.createBuilding(address: _buildingAddressCtrl.text.trim());
       await _goToShell();
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'Ошибка подключения');
+      if (mounted) setState(() => _error = 'Ошибка подключения');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -84,14 +86,33 @@ class _CreateOsiScreenState extends State<CreateOsiScreen> {
 
   // Дом можно добавить и позже из «Ещё» → «Дома и жители» — не блокируем председателя, если
   // адрес дома под рукой не набирается прямо сейчас.
-  Future<void> _skipBuilding() => _goToShell();
+  Future<void> _skipBuilding() async {
+    if (_isLoading) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      await _goToShell();
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Ошибка подключения');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   Future<void> _goToShell() async {
     // ОСИ создана — activeOsiId/роль CHAIRMAN появились на сервере; перечитываем профиль,
     // чтобы HomeRouter увидел актуальную роль (тот AuthUser, что был до этого экрана, ещё
     // с пустыми roles).
     final user = await AuthRepository.instance.me();
-    if (!mounted || user == null) return;
+    if (!mounted) return;
+    if (user == null) {
+      setState(() => _error = 'Сессия истекла. Войдите снова.');
+      return;
+    }
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => HomeRouter(user: user)),
@@ -205,7 +226,7 @@ class _CreateOsiScreenState extends State<CreateOsiScreen> {
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: c.primary,
-          disabledBackgroundColor: c.primary.withOpacity(0.5),
+          disabledBackgroundColor: c.primary.withValues(alpha: 0.5),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.radiusMd)),
         ),
         child: _isLoading

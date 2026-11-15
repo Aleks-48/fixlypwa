@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/core/protected_files.dart';
+import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/theme/app_theme.dart';
 import 'package:fixly_app/core/documents_repository.dart';
 import 'package:fixly_app/core/app_localizations.dart';
@@ -19,6 +20,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   List<OsiDocument> _documents = [];
   bool _loading = true;
   String? _error;
+  int _loadSeq = 0;
+  String? _openingDocId;
 
   static const Map<String, String> _categoryLabels = {
     'ALL': 'Все документы',
@@ -36,29 +39,31 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   Future<void> _loadDocuments() async {
+    final seq = ++_loadSeq;
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final docs = await DocumentsRepository.instance.fetchDocuments();
-      if (mounted) {
-        setState(() {
-          _documents = docs;
-          _loading = false;
-        });
-      }
+      if (!mounted || seq != _loadSeq) return;
+      setState(() {
+        _documents = docs;
+        _loading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
+      if (!mounted || seq != _loadSeq) return;
+      setState(() {
+        _error = e is ApiException ? e.message : e.toString();
+        _loading = false;
+      });
     }
   }
 
   Future<void> _openDocument(OsiDocument doc) async {
+    if (_openingDocId != null) return;
+    setState(() => _openingDocId = doc.id);
     try {
       await openProtectedFile(doc.fileUrl);
     } catch (e) {
@@ -67,6 +72,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
           SnackBar(content: Text('Ошибка открытия документа: $e')),
         );
       }
+    } finally {
+      if (mounted) setState(() => _openingDocId = null);
     }
   }
 
@@ -171,15 +178,16 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
 
           // Список файлов
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? _buildError(c)
-                    : filteredDocs.isEmpty
-                        ? _buildEmpty(c)
-                        : RefreshIndicator(
-                            onRefresh: _loadDocuments,
-                            child: ListView.builder(
+            child: RefreshIndicator(
+              onRefresh: _loadDocuments,
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? _buildError(c)
+                      : filteredDocs.isEmpty
+                          ? _buildEmpty(c)
+                          : ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
                               padding: const EdgeInsets.all(AppDimens.spaceMd),
                               itemCount: filteredDocs.length,
                               itemBuilder: (context, index) {
@@ -245,12 +253,15 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                                                   children: [
                                                     Icon(LucideIcons.calendar, size: 12, color: c.textTertiary),
                                                     const SizedBox(width: 4),
-                                                    Text(
-                                                      doc.formattedDate,
-                                                      style: TextStyle(
-                                                        color: c.textTertiary,
-                                                        fontSize: 11,
-                                                        fontWeight: AppTypography.medium,
+                                                    Flexible(
+                                                      child: Text(
+                                                        doc.formattedDate,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          color: c.textTertiary,
+                                                          fontSize: 11,
+                                                          fontWeight: AppTypography.medium,
+                                                        ),
                                                       ),
                                                     ),
                                                   ],
@@ -277,8 +288,14 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                                         ),
                                       ),
                                       IconButton(
-                                        icon: Icon(LucideIcons.externalLink, color: c.primary, size: 20),
-                                        onPressed: () => _openDocument(doc),
+                                        icon: _openingDocId == doc.id
+                                            ? SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child: CircularProgressIndicator(strokeWidth: 2, color: c.primary),
+                                              )
+                                            : Icon(LucideIcons.externalLink, color: c.primary, size: 20),
+                                        onPressed: _openingDocId != null ? null : () => _openDocument(doc),
                                         tooltip: 'Открыть документ',
                                       ),
                                     ],
@@ -286,7 +303,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                                 );
                               },
                             ),
-                          ),
+            ),
           ),
         ],
       ),
@@ -294,49 +311,70 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   Widget _buildError(AppColors c) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(LucideIcons.alertCircle, color: c.textTertiary, size: 48),
-          const SizedBox(height: AppDimens.spaceMd),
-          Text('Ошибка загрузки документов', style: TextStyle(color: c.textSecondary)),
-          const SizedBox(height: AppDimens.spaceSm),
-          ElevatedButton.icon(
-            onPressed: _loadDocuments,
-            icon: const Icon(LucideIcons.refreshCw, size: 16),
-            label: const Text('Повторить'),
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppDimens.spaceLg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(LucideIcons.alertCircle, color: c.textTertiary, size: 48),
+                  const SizedBox(height: AppDimens.spaceMd),
+                  Text('Ошибка загрузки документов',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: c.textSecondary)),
+                  const SizedBox(height: AppDimens.spaceSm),
+                  ElevatedButton.icon(
+                    onPressed: _loadDocuments,
+                    icon: const Icon(LucideIcons.refreshCw, size: 16),
+                    label: const Text('Повторить'),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildEmpty(AppColors c) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppDimens.spaceLg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(LucideIcons.folderOpen, color: c.textTertiary, size: 56),
-            const SizedBox(height: AppDimens.spaceMd),
-            Text(
-              'Председатель пока не добавил документы',
-              style: TextStyle(
-                color: c.textPrimary,
-                fontWeight: AppTypography.bold,
-                fontSize: 16,
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppDimens.spaceLg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(LucideIcons.folderOpen, color: c.textTertiary, size: 56),
+                  const SizedBox(height: AppDimens.spaceMd),
+                  Text(
+                    'Председатель пока не добавил документы',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontWeight: AppTypography.bold,
+                      fontSize: 16,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Официальные уставные документы, протоколы собраний и сметы появятся здесь сразу после публикации.',
+                    style: TextStyle(color: c.textTertiary, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Официальные уставные документы, протоколы собраний и сметы появятся здесь сразу после публикации.',
-              style: TextStyle(color: c.textTertiary, fontSize: 13),
-              textAlign: TextAlign.center,
-            ),
-          ],
+          ),
         ),
       ),
     );

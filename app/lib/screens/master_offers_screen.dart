@@ -17,7 +17,9 @@ class MasterOffersScreen extends StatefulWidget {
 
 class _MasterOffersScreenState extends State<MasterOffersScreen> {
   List<MarketOffer> _offers = [];
+  final Set<String> _withdrawingIds = {};
   bool _loading = true;
+  int _loadSeq = 0;
   String? _error;
 
   @override
@@ -27,19 +29,20 @@ class _MasterOffersScreenState extends State<MasterOffersScreen> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final offers = await MarketRepository.instance.listMyOffers();
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _offers = offers;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -48,11 +51,25 @@ class _MasterOffersScreenState extends State<MasterOffersScreen> {
   }
 
   Future<void> _withdraw(MarketOffer o) async {
+    if (_withdrawingIds.contains(o.id)) return;
+    setState(() => _withdrawingIds.add(o.id));
     try {
       await MarketRepository.instance.withdraw(o.id);
-      if (mounted) _load();
+      if (mounted) await _load();
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось отозвать отклик')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _withdrawingIds.remove(o.id));
+      }
     }
   }
 
@@ -72,23 +89,51 @@ class _MasterOffersScreenState extends State<MasterOffersScreen> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDimens.spaceLg),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
-                          const SizedBox(height: AppDimens.spaceMd),
-                          OutlinedButton(onPressed: _load, child: const Text('Повторить')),
-                        ],
+                ? LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppDimens.spaceLg),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!,
+                                    style: TextStyle(color: c.danger),
+                                    textAlign: TextAlign.center),
+                                const SizedBox(height: AppDimens.spaceMd),
+                                OutlinedButton(
+                                    onPressed: _load,
+                                    child: const Text('Повторить')),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   )
                 : _offers.isEmpty
-                    ? Center(
-                        child: Text('Вы пока не откликались на заказы',
-                            style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body)),
+                    ? LayoutBuilder(
+                        builder: (context, constraints) => SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppDimens.spaceLg),
+                                child: Text(
+                                  'Вы пока не откликались на заказы',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      color: c.textTertiary,
+                                      fontSize: AppTypography.body),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       )
                     : ListView.separated(
                         padding: const EdgeInsets.all(AppDimens.spaceMd),
@@ -96,6 +141,7 @@ class _MasterOffersScreenState extends State<MasterOffersScreen> {
                         separatorBuilder: (_, __) => const SizedBox(height: AppDimens.spaceSm),
                         itemBuilder: (_, i) {
                           final o = _offers[i];
+                          final withdrawing = _withdrawingIds.contains(o.id);
                           return Container(
                             padding: const EdgeInsets.all(AppDimens.spaceMd),
                             decoration: BoxDecoration(
@@ -116,11 +162,15 @@ class _MasterOffersScreenState extends State<MasterOffersScreen> {
                                               color: c.textPrimary, fontWeight: AppTypography.semibold)),
                                       const SizedBox(height: 4),
                                       Text(marketOfferStatusLabels[o.status] ?? o.status,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                           style:
                                               TextStyle(color: c.textTertiary, fontSize: AppTypography.caption)),
                                       if (o.price != null) ...[
                                         const SizedBox(height: 4),
                                         Text('≈ ${o.price} ₸',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                                 color: c.textSecondary, fontSize: AppTypography.caption)),
                                       ],
@@ -129,8 +179,17 @@ class _MasterOffersScreenState extends State<MasterOffersScreen> {
                                 ),
                                 if (o.status == 'OFFERED')
                                   TextButton(
-                                    onPressed: () => _withdraw(o),
-                                    child: Text('Отозвать', style: TextStyle(color: c.danger)),
+                                    onPressed: withdrawing ? null : () => _withdraw(o),
+                                    child: withdrawing
+                                        ? SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: c.danger,
+                                            ),
+                                          )
+                                        : Text('Отозвать', style: TextStyle(color: c.danger)),
                                   ),
                               ],
                             ),

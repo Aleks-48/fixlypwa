@@ -88,6 +88,14 @@ services:
       OTP_MAX_ATTEMPTS: ${OTP_MAX_ATTEMPTS:-5}
       OTP_RESEND_COOLDOWN_SECONDS: ${OTP_RESEND_COOLDOWN_SECONDS:-60}
       SMS_PROVIDER: ${SMS_PROVIDER:-console}
+      # Telegram webhook and OTP use the same application service (REQ-009).
+      PHONE_OTP_CHANNEL: ${PHONE_OTP_CHANNEL:-sms}
+      TELEGRAM_PROVIDER: ${TELEGRAM_PROVIDER:-console}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: ${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME:-}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
       # Mobizon (Q-030, общая подпись — юрлицо/альфа-имя не нужны); пусто = SMS_PROVIDER=console
       # не читает ключ вовсе.
       MOBIZON_API_KEY: ${MOBIZON_API_KEY:-}
@@ -106,6 +114,14 @@ services:
       WEB_PUSH_PRIVATE_KEY: ${WEB_PUSH_PRIVATE_KEY:-}
       NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY: ${NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY:-}
       # FCM для мобильного клиента (ADR-0012 §5, опционально; пусто = канал отключён).
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-gemma3:4b}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      FIXLY_TURN_URL: ${FIXLY_TURN_URL:-}
+      FIXLY_TURN_SECRET: ${FIXLY_TURN_SECRET:-}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
       FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
       FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:-}

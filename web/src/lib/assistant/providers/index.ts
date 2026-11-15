@@ -1,3 +1,4 @@
+import { OllamaProvider } from "./ollama";
 import { env } from "@/lib/env";
 import type { LlmProvider } from "../types";
 import { ConsoleProvider } from "./console";
@@ -13,6 +14,9 @@ let cached: LlmProvider | null = null;
 export function getLlmProvider(): LlmProvider {
   if (cached) return cached;
   switch (env.LLM_PROVIDER) {
+    case "ollama":
+      cached = new OllamaProvider();
+      break;
     case "console":
       cached = new ConsoleProvider();
       break;
@@ -29,6 +33,7 @@ export function getLlmProvider(): LlmProvider {
 // Фича включена, только если у выбранного провайдера есть нужный ключ (graceful-off, как
 // Web Push/FCM) — иначе UI не должен даже показывать кнопку ассистента.
 export function isAssistantEnabled(): boolean {
+  if (env.LLM_PROVIDER === "ollama") return true;
   if (env.LLM_PROVIDER === "console") return true;
   if (env.LLM_PROVIDER === "groq") return Boolean(env.GROQ_API_KEY);
   if (env.LLM_PROVIDER === "claude") return Boolean(env.ANTHROPIC_API_KEY);

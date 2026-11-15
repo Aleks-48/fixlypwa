@@ -35,6 +35,8 @@ class VotingScreen extends StatefulWidget {
 }
 
 class _VotingScreenState extends State<VotingScreen> {
+  bool _openingSheet = false;
+
   final List<LegallyBindingPoll> _polls = [
     LegallyBindingPoll(
       id: '1',
@@ -64,7 +66,8 @@ class _VotingScreenState extends State<VotingScreen> {
     ),
   ];
 
-  void _showEdsSigningSheet(LegallyBindingPoll poll) {
+  Future<void> _showEdsSigningSheet(LegallyBindingPoll poll) async {
+    if (_openingSheet || poll.isSigned) return;
     if (poll.selectedOptionIndex == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Пожалуйста, выберите вариант ответа')),
@@ -72,119 +75,33 @@ class _VotingScreenState extends State<VotingScreen> {
       return;
     }
 
+    _openingSheet = true;
     final c = AppColors.of(context);
-    final smsController = TextEditingController();
+    bool? signed;
+    try {
+      signed = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: c.card,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
+        ),
+        builder: (_) => _EdsSigningSheet(
+          selectedOption: poll.options[poll.selectedOptionIndex!],
+        ),
+      );
+    } finally {
+      _openingSheet = false;
+    }
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: c.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
-      ),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: AppDimens.spaceLg,
-            right: AppDimens.spaceLg,
-            top: AppDimens.spaceLg,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppDimens.spaceLg,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(LucideIcons.shieldCheck, color: c.success, size: 24),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Подписание ЭЦП',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 18,
-                      fontWeight: AppTypography.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppDimens.spaceSm),
-              Text(
-                'Ваш голос будет заверен цифровой подписью (ЭЦП/SMS-код) и зафиксирован в протоколе решения собственников.',
-                style: TextStyle(color: c.textSecondary, fontSize: 13),
-              ),
-              const SizedBox(height: AppDimens.spaceMd),
-              Container(
-                padding: const EdgeInsets.all(AppDimens.spaceSm),
-                decoration: BoxDecoration(
-                  color: c.surfaceVariant,
-                  borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                ),
-                child: Row(
-                  children: [
-                    Icon(LucideIcons.fileCheck, color: c.primary, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Выбран ответ: "${poll.options[poll.selectedOptionIndex!]}"',
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontWeight: AppTypography.semibold,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppDimens.spaceMd),
-              TextField(
-                controller: smsController,
-                keyboardType: TextInputType.number,
-                style: TextStyle(color: c.textPrimary),
-                decoration: InputDecoration(
-                  labelText: 'Код подтверждения из SMS / ЭЦП',
-                  labelStyle: TextStyle(color: c.textTertiary),
-                  prefixIcon: Icon(LucideIcons.lock, color: c.primary, size: 18),
-                  filled: true,
-                  fillColor: c.surfaceVariant,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppDimens.spaceLg),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    setState(() {
-                      poll.isSigned = true;
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Голос успешно подписан ЭЦП и зарегистрирован!')),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: c.primary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                    ),
-                  ),
-                  child: const Text(
-                    'Подписать и отправить',
-                    style: TextStyle(color: Colors.white, fontWeight: AppTypography.bold),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    if (signed == true && mounted) {
+      setState(() {
+        poll.isSigned = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Голос успешно подписан ЭЦП и зарегистрирован!')),
+      );
+    }
   }
 
   @override
@@ -196,7 +113,11 @@ class _VotingScreenState extends State<VotingScreen> {
       appBar: AppBar(
         backgroundColor: c.background,
         elevation: 0,
-        title: Text('Юридические голосования', style: TextStyle(color: c.textPrimary)),
+        title: Text(
+          'Юридические голосования',
+          style: TextStyle(color: c.textPrimary),
+          overflow: TextOverflow.ellipsis,
+        ),
         iconTheme: IconThemeData(color: c.textPrimary),
       ),
       body: ListView.builder(
@@ -217,41 +138,55 @@ class _VotingScreenState extends State<VotingScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: c.primary.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
+                SizedBox(
+                  width: double.infinity,
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: c.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(LucideIcons.shieldCheck, color: c.primary, size: 14),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                'Закон НПА § 42',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: c.primary,
+                                  fontSize: 11,
+                                  fontWeight: AppTypography.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Row(
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(LucideIcons.shieldCheck, color: c.primary, size: 14),
+                          Icon(LucideIcons.clock, color: c.textTertiary, size: 14),
                           const SizedBox(width: 4),
-                          Text(
-                            'Закон НПА § 42',
-                            style: TextStyle(
-                              color: c.primary,
-                              fontSize: 11,
-                              fontWeight: AppTypography.bold,
+                          Flexible(
+                            child: Text(
+                              'До ${poll.deadline}',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: c.textTertiary, fontSize: 12),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    Row(
-                      children: [
-                        Icon(LucideIcons.clock, color: c.textTertiary, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          'До ${poll.deadline}',
-                          style: TextStyle(color: c.textTertiary, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: AppDimens.spaceSm),
 
@@ -282,16 +217,22 @@ class _VotingScreenState extends State<VotingScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              Icon(LucideIcons.users, color: c.textSecondary, size: 16),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Кворум (порог ${poll.quorumTarget.toStringAsFixed(0)}%)',
-                                style: TextStyle(color: c.textSecondary, fontSize: 12),
-                              ),
-                            ],
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Icon(LucideIcons.users, color: c.textSecondary, size: 16),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    'Кворум (порог ${poll.quorumTarget.toStringAsFixed(0)}%)',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(color: c.textSecondary, fontSize: 12),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           Text(
                             '${poll.currentQuorum.toStringAsFixed(1)}%',
                             style: TextStyle(
@@ -393,6 +334,7 @@ class _VotingScreenState extends State<VotingScreen> {
                   child: poll.isSigned
                       ? Container(
                           alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
                           decoration: BoxDecoration(
                             color: c.success.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(AppDimens.radiusSm),
@@ -403,12 +345,15 @@ class _VotingScreenState extends State<VotingScreen> {
                             children: [
                               Icon(LucideIcons.check, color: c.success, size: 20),
                               const SizedBox(width: 8),
-                              Text(
-                                'Голос заверен ЭЦП',
-                                style: TextStyle(
-                                  color: c.success,
-                                  fontWeight: AppTypography.bold,
-                                  fontSize: 14,
+                              Flexible(
+                                child: Text(
+                                  'Голос заверен ЭЦП',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: c.success,
+                                    fontWeight: AppTypography.bold,
+                                    fontSize: 14,
+                                  ),
                                 ),
                               ),
                             ],
@@ -417,12 +362,21 @@ class _VotingScreenState extends State<VotingScreen> {
                       : ElevatedButton.icon(
                           onPressed: () => _showEdsSigningSheet(poll),
                           icon: const Icon(LucideIcons.fileCheck, color: Colors.white, size: 18),
-                          label: const Text(
-                            'Проголосовать и подписать ЭЦП',
-                            style: TextStyle(color: Colors.white, fontWeight: AppTypography.bold),
+                          label: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'Проголосовать и подписать ЭЦП',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: AppTypography.bold,
+                              ),
+                            ),
                           ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: c.primary,
+                            minimumSize: const Size(0, 48),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(AppDimens.radiusSm),
                             ),
@@ -433,6 +387,159 @@ class _VotingScreenState extends State<VotingScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _EdsSigningSheet extends StatefulWidget {
+  final String selectedOption;
+
+  const _EdsSigningSheet({required this.selectedOption});
+
+  @override
+  State<_EdsSigningSheet> createState() => _EdsSigningSheetState();
+}
+
+class _EdsSigningSheetState extends State<_EdsSigningSheet> {
+  static final RegExp _codeRegex = RegExp(r'^\d{4,8}$');
+  final TextEditingController _smsController = TextEditingController();
+  String? _error;
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _smsController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_submitting) return;
+    final code = _smsController.text.trim();
+    if (!_codeRegex.hasMatch(code)) {
+      setState(() {
+        _error = 'Введите код подтверждения (4–8 цифр)';
+      });
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return Padding(
+      padding: EdgeInsets.only(
+        left: AppDimens.spaceLg,
+        right: AppDimens.spaceLg,
+        top: AppDimens.spaceLg,
+        bottom: MediaQuery.of(context).viewInsets.bottom + AppDimens.spaceLg,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(LucideIcons.shieldCheck, color: c.success, size: 24),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Подписание ЭЦП',
+                    style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 18,
+                      fontWeight: AppTypography.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppDimens.spaceSm),
+            Text(
+              'Ваш голос будет заверен цифровой подписью (ЭЦП/SMS-код) и зафиксирован в протоколе решения собственников.',
+              style: TextStyle(color: c.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: AppDimens.spaceMd),
+            Container(
+              padding: const EdgeInsets.all(AppDimens.spaceSm),
+              decoration: BoxDecoration(
+                color: c.surfaceVariant,
+                borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+              ),
+              child: Row(
+                children: [
+                  Icon(LucideIcons.fileCheck, color: c.primary, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Выбран ответ: "${widget.selectedOption}"',
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontWeight: AppTypography.semibold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppDimens.spaceMd),
+            TextField(
+              controller: _smsController,
+              keyboardType: TextInputType.number,
+              style: TextStyle(color: c.textPrimary),
+              onChanged: (_) {
+                if (_error != null) {
+                  setState(() => _error = null);
+                }
+              },
+              decoration: InputDecoration(
+                labelText: 'Код подтверждения из SMS / ЭЦП',
+                labelStyle: TextStyle(color: c.textTertiary),
+                errorText: _error,
+                errorMaxLines: 2,
+                errorStyle: TextStyle(color: c.danger, fontSize: 12),
+                prefixIcon: Icon(LucideIcons.lock, color: c.primary, size: 18),
+                filled: true,
+                fillColor: c.surfaceVariant,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppDimens.spaceLg),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _submitting ? null : _submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: c.primary,
+                  minimumSize: const Size(0, 50),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                  ),
+                ),
+                child: const Text(
+                  'Подписать и отправить',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: AppTypography.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -58,13 +58,13 @@ class DefaultFirebaseOptions {
     storageBucket: 'fixly-chat.firebasestorage.app',
   );
 
+  // Client identifiers from the Firebase iOS registration for this bundle.
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAkEZq61DKaJngO0eY2fLiK2CAStAXjoY0',
-    appId: '1:700103731510:ios:2f5af637b4d9cf88a6eb97',
-    messagingSenderId: '700103731510',
-    projectId: 'fixly-chat',
-    storageBucket: 'fixly-chat.firebasestorage.app',
-    iosBundleId: 'com.example.fixlyApp',
+    apiKey: String.fromEnvironment('FIREBASE_IOS_API_KEY'),
+    appId: String.fromEnvironment('FIREBASE_IOS_APP_ID'),
+    messagingSenderId: String.fromEnvironment('FIREBASE_SENDER_ID'),
+    projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'),
+    iosBundleId: 'com.aleks48.fixlyapp',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(

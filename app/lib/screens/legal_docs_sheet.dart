@@ -49,8 +49,20 @@ class _LegalDocsSheetState extends State<LegalDocsSheet> with SingleTickerProvid
 
   Future<void> _openWebLegal() async {
     final uri = Uri.parse('${ApiClient.instance.baseUrl}/legal');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось открыть ссылку')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось открыть ссылку')),
+        );
+      }
     }
   }
 
@@ -74,7 +86,7 @@ class _LegalDocsSheetState extends State<LegalDocsSheet> with SingleTickerProvid
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: c.textTertiary.withOpacity(0.3),
+                color: c.textTertiary.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -88,7 +100,7 @@ class _LegalDocsSheetState extends State<LegalDocsSheet> with SingleTickerProvid
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: c.primary.withOpacity(0.1),
+                    color: c.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(LucideIcons.shieldCheck, color: c.primary, size: 20),
@@ -174,12 +186,17 @@ class _LegalDocsSheetState extends State<LegalDocsSheet> with SingleTickerProvid
               child: ElevatedButton.icon(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(LucideIcons.check, size: 18, color: Colors.white),
-                label: Text(
-                  lang == 'en' ? 'I Understand and Agree' : (lang == 'kk' ? 'Түсінікті, келісемін' : 'Понятно, принимаю условия'),
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                label: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    lang == 'en' ? 'I Understand and Agree' : (lang == 'kk' ? 'Түсінікті, келісемін' : 'Понятно, принимаю условия'),
+                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: c.primary,
+                  minimumSize: const Size(0, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
               ),
@@ -404,9 +421,9 @@ class _LegalDocsSheetState extends State<LegalDocsSheet> with SingleTickerProvid
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: c.primary.withOpacity(0.08),
+        color: c.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.primary.withOpacity(0.2)),
+        border: Border.all(color: c.primary.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

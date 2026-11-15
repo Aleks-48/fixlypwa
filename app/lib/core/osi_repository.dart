@@ -12,9 +12,9 @@ class Building {
   Building({required this.id, required this.address, this.apartmentsCount});
 
   factory Building.fromJson(Map<String, dynamic> json) => Building(
-        id: json['id'] as String,
-        address: json['address'] as String,
-        apartmentsCount: (json['apartmentsCount'] as num?)?.toInt(),
+        id: ApiJson.asNonEmptyString(json['id']),
+        address: ApiJson.asString(json['address']),
+        apartmentsCount: ApiJson.asNullableInt(json['apartmentsCount']),
       );
 }
 
@@ -32,12 +32,12 @@ class Occupant {
   });
 
   factory Occupant.fromJson(Map<String, dynamic> json) {
-    final user = json['user'] as Map<String, dynamic>?;
+    final user = ApiJson.asNullableMap(json['user']);
     return Occupant(
-      id: json['id'] as String,
-      fullName: json['fullName'] as String,
-      phone: json['phone'] as String?,
-      email: user?['email'] as String?,
+      id: ApiJson.asNonEmptyString(json['id']),
+      fullName: ApiJson.asString(json['fullName']),
+      phone: ApiJson.asNullableString(json['phone']),
+      email: ApiJson.asNullableString(user?['email']),
     );
   }
 }
@@ -58,29 +58,12 @@ class Apartment {
   });
 
   factory Apartment.fromJson(Map<String, dynamic> json) {
-    final rawArea = json['area'];
-    double? parsedArea;
-    if (rawArea is num) {
-      parsedArea = rawArea.toDouble();
-    } else if (rawArea is String) {
-      parsedArea = double.tryParse(rawArea);
-    }
-
-    final rawRooms = json['rooms'];
-    int? parsedRooms;
-    if (rawRooms is num) {
-      parsedRooms = rawRooms.toInt();
-    } else if (rawRooms is String) {
-      parsedRooms = int.tryParse(rawRooms);
-    }
-
     return Apartment(
-      id: json['id'] as String,
-      number: json['number'] as String,
-      area: parsedArea,
-      rooms: parsedRooms,
-      occupants: ((json['occupants'] as List?) ?? const [])
-          .cast<Map<String, dynamic>>()
+      id: ApiJson.asNonEmptyString(json['id']),
+      number: ApiJson.asString(json['number']),
+      area: ApiJson.asNullableDouble(json['area'], allowString: true),
+      rooms: ApiJson.asNullableInt(json['rooms'], allowString: true),
+      occupants: ApiJson.asMapList(json['occupants'], allowMissing: true)
           .map(Occupant.fromJson)
           .toList(),
     );
@@ -97,9 +80,9 @@ class OsiSearchResult {
   OsiSearchResult({required this.id, required this.name, this.address});
 
   factory OsiSearchResult.fromJson(Map<String, dynamic> json) => OsiSearchResult(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        address: json['address'] as String?,
+        id: ApiJson.asNonEmptyString(json['id']),
+        name: ApiJson.asString(json['name']),
+        address: ApiJson.asNullableString(json['address']),
       );
 }
 
@@ -112,12 +95,12 @@ class MyJoinRequest {
   MyJoinRequest({required this.id, this.note, required this.osiName, this.osiAddress});
 
   factory MyJoinRequest.fromJson(Map<String, dynamic> json) {
-    final osi = json['osi'] as Map<String, dynamic>;
+    final osi = ApiJson.asMap(json['osi']);
     return MyJoinRequest(
-      id: json['id'] as String,
-      note: json['note'] as String?,
-      osiName: osi['name'] as String,
-      osiAddress: osi['address'] as String?,
+      id: ApiJson.asNonEmptyString(json['id']),
+      note: ApiJson.asNullableString(json['note']),
+      osiName: ApiJson.asString(osi['name']),
+      osiAddress: ApiJson.asNullableString(osi['address']),
     );
   }
 }
@@ -133,14 +116,15 @@ class PendingJoinRequest {
   PendingJoinRequest({required this.id, this.note, this.email, this.phone, this.fullName});
 
   factory PendingJoinRequest.fromJson(Map<String, dynamic> json) {
-    final user = (json['user'] as Map<String, dynamic>?) ?? {};
-    final occupant = user['occupant'] as Map<String, dynamic>?;
+    final user = ApiJson.asNullableMap(json['user']);
+    final occupant = ApiJson.asNullableMap(user?['occupant']);
     return PendingJoinRequest(
-      id: json['id'] as String,
-      note: json['note'] as String?,
-      email: user['email'] as String?,
-      phone: user['phone'] as String?,
-      fullName: occupant?['fullName'] as String? ?? user['fullName'] as String?,
+      id: ApiJson.asNonEmptyString(json['id']),
+      note: ApiJson.asNullableString(json['note']),
+      email: ApiJson.asNullableString(user?['email']),
+      phone: ApiJson.asNullableString(user?['phone']),
+      fullName: ApiJson.asNullableString(occupant?['fullName']) ??
+          ApiJson.asNullableString(user?['fullName']),
     );
   }
 }
@@ -154,41 +138,42 @@ class OsiRepository {
   // Создатель становится CHAIRMAN, новая ОСИ — активная (Q-051). Возвращает activeOsiId —
   // вызывающий обязан перечитать AuthRepository.me() после этого, чтобы обновить AuthUser.
   Future<String> createOsi({required String name, String? bin, String? address}) async {
-    final data = await _api.post('/api/osi', body: {
+    final data = ApiJson.asMap(await _api.post('/api/osi', body: {
       'name': name,
       if (bin != null && bin.isNotEmpty) 'bin': bin,
       if (address != null && address.isNotEmpty) 'address': address,
-    }) as Map<String, dynamic>;
-    return data['activeOsiId'] as String;
+    }));
+    return ApiJson.asNonEmptyString(data['activeOsiId']);
   }
 
   Future<Building> createBuilding({required String address, int? apartmentsCount}) async {
-    final data = await _api.post('/api/buildings', body: {
+    final data = ApiJson.asMap(await _api.post('/api/buildings', body: {
       'address': address,
       if (apartmentsCount != null) 'apartmentsCount': apartmentsCount,
-    }) as Map<String, dynamic>;
-    return Building.fromJson(data['building'] as Map<String, dynamic>);
+    }));
+    return Building.fromJson(ApiJson.asMap(data['building']));
   }
 
   Future<List<Building>> listBuildings() async {
-    final data = await _api.get('/api/buildings') as Map<String, dynamic>;
-    return (data['buildings'] as List).cast<Map<String, dynamic>>().map(Building.fromJson).toList();
+    final data = ApiJson.asMap(await _api.get('/api/buildings'));
+    return ApiJson.asMapList(data['buildings']).map(Building.fromJson).toList();
   }
 
   Future<List<Apartment>> listApartments(String buildingId) async {
-    final data = await _api.get('/api/apartments?buildingId=$buildingId') as Map<String, dynamic>;
-    return (data['apartments'] as List)
-        .cast<Map<String, dynamic>>()
+    final data = ApiJson.asMap(
+      await _api.get('/api/apartments?buildingId=${Uri.encodeQueryComponent(buildingId)}'),
+    );
+    return ApiJson.asMapList(data['apartments'])
         .map(Apartment.fromJson)
         .toList();
   }
 
   Future<Apartment> createApartment({required String buildingId, required String number}) async {
-    final data = await _api.post('/api/apartments', body: {
+    final data = ApiJson.asMap(await _api.post('/api/apartments', body: {
       'buildingId': buildingId,
       'number': number,
-    }) as Map<String, dynamic>;
-    return Apartment.fromJson(data['apartment'] as Map<String, dynamic>);
+    }));
+    return Apartment.fromJson(ApiJson.asMap(data['apartment']));
   }
 
   // Телефон И/ИЛИ email — минимум один (ревизия REQ-013). Если житель уже сам
@@ -210,19 +195,18 @@ class OsiRepository {
 
   // REQ-151: найти ОСИ по названию/адресу — доступно любому вошедшему, без роли/tenant.
   Future<List<OsiSearchResult>> searchOsi(String query) async {
-    final data = await _api.get('/api/osi/search?q=${Uri.encodeComponent(query)}')
-        as Map<String, dynamic>;
-    return (data['results'] as List)
-        .cast<Map<String, dynamic>>()
+    final data = ApiJson.asMap(
+      await _api.get('/api/osi/search?q=${Uri.encodeQueryComponent(query)}'),
+    );
+    return ApiJson.asMapList(data['results'])
         .map(OsiSearchResult.fromJson)
         .toList();
   }
 
   // Мои активные заявки (REQ-154) — статус вместо повторного поиска, если уже отправлена.
   Future<List<MyJoinRequest>> myJoinRequests() async {
-    final data = await _api.get('/api/osi/join-request') as Map<String, dynamic>;
-    return (data['requests'] as List)
-        .cast<Map<String, dynamic>>()
+    final data = ApiJson.asMap(await _api.get('/api/osi/join-request'));
+    return ApiJson.asMapList(data['requests'])
         .map(MyJoinRequest.fromJson)
         .toList();
   }
@@ -231,27 +215,26 @@ class OsiRepository {
   // генерировал фейковый id для локального состояния — «Отменить» до перезагрузки экрана
   // слало DELETE на несуществующий id и падало с 404).
   Future<String> submitJoinRequest({required String osiId, String? note}) async {
-    final data = await _api.post('/api/osi/join-request', body: {
+    final data = ApiJson.asMap(await _api.post('/api/osi/join-request', body: {
       'osiId': osiId,
       if (note != null && note.isNotEmpty) 'note': note,
-    }) as Map<String, dynamic>;
-    return (data['request'] as Map<String, dynamic>)['id'] as String;
+    }));
+    return ApiJson.asNonEmptyString(ApiJson.asMap(data['request'])['id']);
   }
 
   Future<void> cancelJoinRequest(String id) async {
-    await _api.delete('/api/osi/join-request/$id');
+    await _api.delete('/api/osi/join-request/${Uri.encodeComponent(id)}');
   }
 
   // REQ-153: заявки своей ОСИ — требует роль CHAIRMAN активной ОСИ (chairmanContext на сервере).
   Future<List<PendingJoinRequest>> listOsiJoinRequests() async {
-    final data = await _api.get('/api/osi/join-requests') as Map<String, dynamic>;
-    return (data['requests'] as List)
-        .cast<Map<String, dynamic>>()
+    final data = ApiJson.asMap(await _api.get('/api/osi/join-requests'));
+    return ApiJson.asMapList(data['requests'])
         .map(PendingJoinRequest.fromJson)
         .toList();
   }
 
   Future<void> resolveJoinRequest(String id) async {
-    await _api.post('/api/osi/join-requests/$id/resolve');
+    await _api.post('/api/osi/join-requests/${Uri.encodeComponent(id)}/resolve');
   }
 }

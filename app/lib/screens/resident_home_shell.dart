@@ -1,3 +1,4 @@
+import 'ai_assistant_screen.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -125,6 +126,8 @@ class _HomeTab extends StatefulWidget {
 class _HomeTabState extends State<_HomeTab> {
   List<Announcement> _recent = [];
   bool _loading = true;
+  String? _error;
+  int _loadSeq = 0;
   StreamSubscription<SseEvent>? _sub;
   Timer? _debounce;
 
@@ -148,15 +151,30 @@ class _HomeTabState extends State<_HomeTab> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
+    if (!mounted) return;
+    if (_recent.isEmpty) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    } else {
+      setState(() => _error = null);
+    }
     try {
       final all = await AnnouncementsRepository.instance.list();
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _recent = all.take(3).toList();
         _loading = false;
+        _error = null;
       });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (!mounted || seq != _loadSeq) return;
+      setState(() {
+        _error = e is ApiException ? e.message : e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -184,6 +202,7 @@ class _HomeTabState extends State<_HomeTab> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(AppDimens.spaceMd),
           children: [
             Text(AppLocalizations.tr('quick_actions'),
@@ -197,11 +216,14 @@ class _HomeTabState extends State<_HomeTab> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(AppLocalizations.tr('nav_announcements'),
-                    style: TextStyle(
-                        color: c.textPrimary,
-                        fontSize: AppTypography.sectionTitle,
-                        fontWeight: AppTypography.bold)),
+                Expanded(
+                  child: Text(AppLocalizations.tr('nav_announcements'),
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: c.textPrimary,
+                          fontSize: AppTypography.sectionTitle,
+                          fontWeight: AppTypography.bold)),
+                ),
                 TextButton(
                   onPressed: () => Navigator.push(
                     context,
@@ -216,6 +238,23 @@ class _HomeTabState extends State<_HomeTab> {
               const Padding(
                 padding: EdgeInsets.all(AppDimens.spaceMd),
                 child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_error != null && _recent.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(AppDimens.spaceMd),
+                decoration: BoxDecoration(
+                  color: c.card,
+                  borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                  border: Border.all(color: c.cardBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_error!, style: TextStyle(color: c.danger)),
+                    const SizedBox(height: AppDimens.spaceSm),
+                    OutlinedButton(onPressed: _load, child: const Text('Повторить')),
+                  ],
+                ),
               )
             else if (_recent.isEmpty)
               Text('Объявлений пока нет', style: TextStyle(color: c.textTertiary))
@@ -260,6 +299,7 @@ class _QuickLinks extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = colors;
     final items = [
+      (LucideIcons.bot, 'AI-помощник', () => const AiAssistantScreen()),
       (LucideIcons.scanLine, AppLocalizations.tr('ai_scanner'), () => const DefectScannerScreen()),
       (LucideIcons.wrench, AppLocalizations.tr('nav_masters'), () => const MastersMapScreen()),
       (LucideIcons.fileText, AppLocalizations.tr('pdf_receipts'), () => const PdfReceiptsScreen()),
@@ -273,7 +313,7 @@ class _QuickLinks extends StatelessWidget {
         crossAxisCount: 2,
         crossAxisSpacing: AppDimens.spaceSm,
         mainAxisSpacing: AppDimens.spaceSm,
-        childAspectRatio: 2.3,
+        mainAxisExtent: 74,
       ),
       itemCount: items.length,
       itemBuilder: (context, index) {
@@ -286,7 +326,7 @@ class _QuickLinks extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppDimens.radiusMd),
           child: Container(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppDimens.spaceMd,
+              horizontal: AppDimens.spaceSm,
               vertical: AppDimens.spaceSm,
             ),
             decoration: BoxDecoration(
@@ -308,6 +348,8 @@ class _QuickLinks extends StatelessWidget {
                 Expanded(
                   child: Text(
                     item.$2,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: c.textPrimary,
                       fontWeight: AppTypography.semibold,
@@ -341,6 +383,9 @@ class _ProfileTabState extends State<_ProfileTab> {
   late AuthUser _currentUser;
   File? _avatarFile;
   final ImagePicker _picker = ImagePicker();
+  bool _loggingOut = false;
+  bool _pickingAvatar = false;
+  bool _dialogOpen = false;
 
   @override
   void initState() {
@@ -348,59 +393,93 @@ class _ProfileTabState extends State<_ProfileTab> {
     _currentUser = widget.user;
   }
 
-  Future<void> _logout(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(AppLocalizations.tr('logout_title')),
-        content: Text(AppLocalizations.tr('logout_confirm')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(AppLocalizations.tr('btn_cancel')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(AppLocalizations.tr('btn_logout'), style: const TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
+  @override
+  void didUpdateWidget(covariant _ProfileTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.user.id != oldWidget.user.id) {
+      _currentUser = widget.user;
+    }
+  }
 
-    if (confirm != true || !context.mounted) return;
+  Future<void> _logout() async {
+    if (_loggingOut || _dialogOpen) return;
+    _dialogOpen = true;
+    bool? confirm;
+    try {
+      confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(AppLocalizations.tr('logout_title')),
+          content: Text(AppLocalizations.tr('logout_confirm')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(AppLocalizations.tr('btn_cancel')),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(AppLocalizations.tr('btn_logout'), style: const TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      _dialogOpen = false;
+    }
 
-    await AuthRepository.instance.logout();
-    if (!context.mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (_) => false,
-    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _loggingOut = true);
+    try {
+      await AuthRepository.instance.logout();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (_) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is ApiException ? e.message : e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
   }
 
   // Открытие шторки редактирования профиля
-  void _openEditProfileDialog() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _EditProfileSheet(
-        user: _currentUser,
-        onSave: (updatedUser) {
-          setState(() => _currentUser = updatedUser);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.tr('profile_updated')),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        },
-      ),
-    );
+  Future<void> _openEditProfileDialog() async {
+    if (_dialogOpen) return;
+    _dialogOpen = true;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => _EditProfileSheet(
+          user: _currentUser,
+          onSave: (updatedUser) {
+            if (!mounted) return;
+            setState(() => _currentUser = updatedUser);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(AppLocalizations.tr('profile_updated')),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          },
+        ),
+      );
+    } finally {
+      _dialogOpen = false;
+    }
   }
 
   // Метод съемки/выбора картинки через ImagePicker
   Future<void> _pickAvatarImage(ImageSource source) async {
+    if (_pickingAvatar) return;
+    _pickingAvatar = true;
     try {
       final XFile? image = await _picker.pickImage(
         source: source,
@@ -408,6 +487,7 @@ class _ProfileTabState extends State<_ProfileTab> {
         maxHeight: 512,
         imageQuality: 85,
       );
+      if (!mounted) return;
       if (image != null) {
         setState(() {
           _avatarFile = File(image.path);
@@ -419,100 +499,131 @@ class _ProfileTabState extends State<_ProfileTab> {
           SnackBar(content: Text('Не удалось загрузить фото: $e')),
         );
       }
+    } finally {
+      _pickingAvatar = false;
     }
   }
 
   // Окно выбора источника аватарки
-  void _openAvatarPicker() {
+  Future<void> _openAvatarPicker() async {
+    if (_dialogOpen || _pickingAvatar) return;
+    _dialogOpen = true;
     final c = AppColors.of(context);
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: c.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => Container(
+          decoration: BoxDecoration(
+            color: c.card,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
+          ),
+          padding: const EdgeInsets.all(AppDimens.spaceMd),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: c.textTertiary.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Text(
+                  AppLocalizations.tr('photo_profile'),
+                  style: TextStyle(
+                    fontSize: AppTypography.sectionTitle,
+                    fontWeight: AppTypography.bold,
+                    color: c.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: Icon(LucideIcons.camera, color: c.primary),
+                  title: Text(AppLocalizations.tr('photo_take'), style: TextStyle(color: c.textPrimary)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickAvatarImage(ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: Icon(LucideIcons.image, color: c.primary),
+                  title: Text(AppLocalizations.tr('photo_gallery'), style: TextStyle(color: c.textPrimary)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickAvatarImage(ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+          ),
         ),
-        padding: const EdgeInsets.all(AppDimens.spaceMd),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: c.textTertiary.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Text(
-              AppLocalizations.tr('photo_profile'),
-              style: TextStyle(
-                fontSize: AppTypography.sectionTitle,
-                fontWeight: AppTypography.bold,
-                color: c.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: Icon(LucideIcons.camera, color: c.primary),
-              title: Text(AppLocalizations.tr('photo_take'), style: TextStyle(color: c.textPrimary)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickAvatarImage(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: Icon(LucideIcons.image, color: c.primary),
-              title: Text(AppLocalizations.tr('photo_gallery'), style: TextStyle(color: c.textPrimary)),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickAvatarImage(ImageSource.gallery);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
+      );
+    } finally {
+      _dialogOpen = false;
+    }
   }
 
-  void _openSupportDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => _SupportContactDialog(colors: AppColors.of(context)),
-    );
+  Future<void> _openSupportDialog() async {
+    if (_dialogOpen) return;
+    _dialogOpen = true;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => _SupportContactDialog(
+          colors: AppColors.of(context),
+          messenger: messenger,
+        ),
+      );
+    } finally {
+      _dialogOpen = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    
-    // Подписываемся на ThemeNotifier из Provider
-    final themeNotifier = context.watch<ThemeNotifier>();
-    final isDark = themeNotifier.themeMode == ThemeMode.dark;
+
+    // Подписываемся на ThemeNotifier из Provider (если провайдер подключён)
+    ThemeNotifier? themeNotifier;
+    try {
+      themeNotifier = context.watch<ThemeNotifier>();
+    } on ProviderNotFoundException {
+      themeNotifier = null;
+    }
+    final isDark = themeNotifier != null
+        ? themeNotifier.themeMode == ThemeMode.dark
+        : Theme.of(context).brightness == Brightness.dark;
 
     final String notSpecified = AppLocalizations.tr('not_specified');
-    final String fullName = (_currentUser.fullName != null && _currentUser.fullName!.isNotEmpty)
-        ? _currentUser.fullName!
+    final String fullName = (_currentUser.fullName != null && _currentUser.fullName!.trim().isNotEmpty)
+        ? _currentUser.fullName!.trim()
         : notSpecified;
-    final String phone = (_currentUser.phone != null && _currentUser.phone!.isNotEmpty)
-        ? _currentUser.phone!
+    final String phone = (_currentUser.phone != null && _currentUser.phone!.trim().isNotEmpty)
+        ? _currentUser.phone!.trim()
         : notSpecified;
-    final String email = (_currentUser.email != null && _currentUser.email!.isNotEmpty)
-        ? _currentUser.email!
+    final String email = (_currentUser.email != null && _currentUser.email!.trim().isNotEmpty)
+        ? _currentUser.email!.trim()
         : notSpecified;
 
-    // Название ОСИ / ЖК жителя из базы данных
-    final osiName = (_currentUser.osiName != null && _currentUser.osiName!.isNotEmpty)
-        ? _currentUser.osiName!
-        : (_currentUser.activeOsiId != null ? 'ЖК Сарыарка (ОСИ)' : 'ОСИ / ЖК не привязано');
-    
-    final apartmentInfo = (_currentUser.apartmentNumber != null && _currentUser.apartmentNumber!.isNotEmpty)
-        ? 'кв. ${_currentUser.apartmentNumber}${_currentUser.buildingAddress != null ? " (${_currentUser.buildingAddress})" : ""}'
-        : (_currentUser.activeOsiId != null ? 'кв. 42' : notSpecified);
+    // Название ОСИ / ЖК и квартира из базы данных (без фейковых подстановок)
+    final osiName = (_currentUser.osiName != null && _currentUser.osiName!.trim().isNotEmpty)
+        ? _currentUser.osiName!.trim()
+        : (_currentUser.activeOsiId != null ? notSpecified : 'ОСИ / ЖК не привязано');
 
-    final String avatarInitial = (fullName != notSpecified) ? fullName[0].toUpperCase() : '?';
+    final aptNum = _currentUser.apartmentNumber?.trim() ?? '';
+    final bldAddr = _currentUser.buildingAddress?.trim() ?? '';
+    final apartmentInfo = aptNum.isNotEmpty
+        ? 'кв. $aptNum${bldAddr.isNotEmpty ? " ($bldAddr)" : ""}'
+        : (bldAddr.isNotEmpty ? bldAddr : notSpecified);
+
+    final String avatarInitial = (fullName != notSpecified && fullName.isNotEmpty)
+        ? fullName[0].toUpperCase()
+        : '?';
 
     return Scaffold(
       backgroundColor: c.background,
@@ -667,9 +778,11 @@ class _ProfileTabState extends State<_ProfileTab> {
                 style: TextStyle(color: c.textPrimary, fontWeight: AppTypography.regular),
               ),
               value: isDark,
-              onChanged: (val) {
-                context.read<ThemeNotifier>().toggleTheme(val);
-              },
+              onChanged: themeNotifier == null
+                  ? null
+                  : (val) {
+                      context.read<ThemeNotifier>().toggleTheme(val);
+                    },
             ),
           ),
 
@@ -689,7 +802,8 @@ class _ProfileTabState extends State<_ProfileTab> {
               ),
               trailing: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
-                  value: appLanguage.value,
+                  value: const ['ru', 'kk', 'en'].contains(appLanguage.value) ? appLanguage.value : 'ru',
+                  isDense: true,
                   dropdownColor: c.card,
                   icon: Icon(Icons.arrow_drop_down, color: c.textSecondary),
                   onChanged: (newLang) {
@@ -759,8 +873,14 @@ class _ProfileTabState extends State<_ProfileTab> {
           SizedBox(
             height: AppDimens.primaryTapTarget,
             child: OutlinedButton.icon(
-              onPressed: () => _logout(context),
-              icon: Icon(LucideIcons.logOut, color: c.danger),
+              onPressed: _loggingOut ? null : _logout,
+              icon: _loggingOut
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: c.danger),
+                    )
+                  : Icon(LucideIcons.logOut, color: c.danger),
               label: Text(
                 AppLocalizations.tr('profile_logout'),
                 style: TextStyle(
@@ -877,6 +997,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   late TextEditingController _nameCtrl;
   late TextEditingController _phoneCtrl;
   late TextEditingController _emailCtrl;
+  bool _saving = false;
+  String? _error;
 
   @override
   void initState() {
@@ -894,6 +1016,49 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     super.dispose();
   }
 
+  Future<void> _save() async {
+    if (_saving) return;
+    final name = _nameCtrl.text.trim();
+    if (name.length < 2) {
+      setState(() => _error = 'Укажите ФИО (минимум 2 символа)');
+      return;
+    }
+    final email = _emailCtrl.text.trim();
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await AuthRepository.instance.updateProfile(fullName: name);
+      if (email.isNotEmpty && email != (widget.user.email ?? '').trim()) {
+        await ApiClient.instance.patch('/api/profile', body: {
+          'fullName': name,
+          'email': email,
+        });
+      }
+      if (!mounted) return;
+      final updated = AuthUser(
+        id: widget.user.id,
+        roles: widget.user.roles,
+        fullName: name,
+        phone: widget.user.phone,
+        email: email.isNotEmpty ? email : widget.user.email,
+        activeOsiId: widget.user.activeOsiId,
+        osiName: widget.user.osiName,
+        apartmentNumber: widget.user.apartmentNumber,
+        buildingAddress: widget.user.buildingAddress,
+      );
+      widget.onSave(updated);
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
@@ -908,66 +1073,83 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         top: AppDimens.spaceSm,
         bottom: MediaQuery.of(context).viewInsets.bottom + AppDimens.spaceMd,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: c.textTertiary.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: c.textTertiary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
-          Text(
-            AppLocalizations.tr('profile_edit'),
-            style: TextStyle(
-              fontSize: AppTypography.sectionTitle,
-              fontWeight: AppTypography.bold,
-              color: c.textPrimary,
+            Text(
+              AppLocalizations.tr('profile_edit'),
+              style: TextStyle(
+                fontSize: AppTypography.sectionTitle,
+                fontWeight: AppTypography.bold,
+                color: c.textPrimary,
+              ),
             ),
-          ),
-          const SizedBox(height: AppDimens.spaceMd),
-          TextField(
-            controller: _nameCtrl,
-            style: TextStyle(color: c.textPrimary),
-            decoration: InputDecoration(
-              labelText: AppLocalizations.tr('label_full_name'),
-              prefixIcon: const Icon(LucideIcons.user),
+            const SizedBox(height: AppDimens.spaceMd),
+            TextField(
+              controller: _nameCtrl,
+              enabled: !_saving,
+              style: TextStyle(color: c.textPrimary),
+              decoration: InputDecoration(
+                labelText: AppLocalizations.tr('label_full_name'),
+                prefixIcon: const Icon(LucideIcons.user),
+              ),
             ),
-          ),
-          const SizedBox(height: AppDimens.spaceSm),
-          TextField(
-            controller: _phoneCtrl,
-            keyboardType: TextInputType.phone,
-            enabled: false, // Телефон — логин, не меняется
-            style: TextStyle(color: c.textSecondary),
-            decoration: InputDecoration(
-              labelText: AppLocalizations.tr('profile_phone'),
-              prefixIcon: const Icon(LucideIcons.phone),
+            const SizedBox(height: AppDimens.spaceSm),
+            TextField(
+              controller: _phoneCtrl,
+              keyboardType: TextInputType.phone,
+              enabled: false, // Телефон — логин, не меняется
+              style: TextStyle(color: c.textSecondary),
+              decoration: InputDecoration(
+                labelText: AppLocalizations.tr('profile_phone'),
+                prefixIcon: const Icon(LucideIcons.phone),
+              ),
             ),
-          ),
-          const SizedBox(height: AppDimens.spaceSm),
-          TextField(
-            controller: _emailCtrl,
-            keyboardType: TextInputType.emailAddress,
-            style: TextStyle(color: c.textPrimary),
-            decoration: InputDecoration(
-              labelText: AppLocalizations.tr('profile_email'),
-              prefixIcon: const Icon(LucideIcons.mail),
+            const SizedBox(height: AppDimens.spaceSm),
+            TextField(
+              controller: _emailCtrl,
+              enabled: !_saving,
+              keyboardType: TextInputType.emailAddress,
+              style: TextStyle(color: c.textPrimary),
+              decoration: InputDecoration(
+                labelText: AppLocalizations.tr('profile_email'),
+                prefixIcon: const Icon(LucideIcons.mail),
+              ),
             ),
-          ),
-          const SizedBox(height: AppDimens.spaceLg),
-          SizedBox(
-            width: double.infinity,
-            height: AppDimens.primaryTapTarget,
-            child: _SaveProfileButton(nameCtrl: _nameCtrl, emailCtrl: _emailCtrl, user: widget.user, onSave: widget.onSave),
-          )
-        ],
+            if (_error != null) ...[
+              const SizedBox(height: AppDimens.spaceSm),
+              Text(_error!, style: TextStyle(color: c.danger, fontSize: AppTypography.caption)),
+            ],
+            const SizedBox(height: AppDimens.spaceLg),
+            SizedBox(
+              width: double.infinity,
+              height: AppDimens.primaryTapTarget,
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(AppLocalizations.tr('btn_save')),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -975,27 +1157,24 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
 class _SupportContactDialog extends StatelessWidget {
   final AppColors colors;
+  final ScaffoldMessengerState messenger;
 
-  const _SupportContactDialog({required this.colors});
+  const _SupportContactDialog({required this.colors, required this.messenger});
 
-  Future<void> _openUrl(BuildContext context, String urlStr) async {
+  Future<void> _openUrl(String urlStr) async {
     final uri = Uri.parse(urlStr);
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.tr('support_open_error'))),
-          );
-        }
-      }
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.tr('support_link_error'))),
+        messenger.showSnackBar(
+          SnackBar(content: Text(AppLocalizations.tr('support_open_error'))),
         );
       }
+    } catch (_) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(AppLocalizations.tr('support_link_error'))),
+      );
     }
   }
 
@@ -1011,50 +1190,51 @@ class _SupportContactDialog extends StatelessWidget {
         children: [
           Icon(LucideIcons.headphones, color: c.primary),
           const SizedBox(width: 8),
-          Text(
-            AppLocalizations.tr('profile_support'),
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: AppTypography.sectionTitle,
-              fontWeight: AppTypography.bold,
+          Expanded(
+            child: Text(
+              AppLocalizations.tr('profile_support'),
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: AppTypography.sectionTitle,
+                fontWeight: AppTypography.bold,
+              ),
             ),
           ),
         ],
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(LucideIcons.messageSquare, color: Colors.blue),
-            title: Text(AppLocalizations.tr('support_telegram_chat'), style: TextStyle(color: c.textPrimary)),
-            subtitle: const Text('@fixlyosibot'),
-            onTap: () {
-              Navigator.pop(context);
-              _openUrl(context, 'https://t.me/fixlyosibot');
-            },
-          ),
-          ListTile(
-            leading: const Icon(LucideIcons.phoneCall, color: Colors.green),
-            title: Text('WhatsApp', style: TextStyle(color: c.textPrimary)),
-            subtitle: const Text('+7 (705) 596-64-86'),
-            onTap: () {
-              Navigator.pop(context);
-              _openUrl(context, 'https://wa.me/77055966486');
-            },
-          ),
-          ListTile(
-            leading: const Icon(LucideIcons.mail, color: Colors.orange),
-            title: Text(AppLocalizations.tr('support_email_dev'), style: TextStyle(color: c.textPrimary)),
-            subtitle: const Text('fixly.support@gmail.com'),
-            onTap: () {
-              Navigator.pop(context);
-              _openUrl(
-                context,
-                'mailto:fixly.support@gmail.com',
-              );
-            },
-          ),
-        ],
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(LucideIcons.messageSquare, color: Colors.blue),
+              title: Text(AppLocalizations.tr('support_telegram_chat'), style: TextStyle(color: c.textPrimary)),
+              subtitle: const Text('@fixlyosibot'),
+              onTap: () {
+                Navigator.pop(context);
+                _openUrl('https://t.me/fixlyosibot');
+              },
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.phoneCall, color: Colors.green),
+              title: Text('WhatsApp', style: TextStyle(color: c.textPrimary)),
+              subtitle: const Text('+7 (705) 596-64-86'),
+              onTap: () {
+                Navigator.pop(context);
+                _openUrl('https://wa.me/77055966486');
+              },
+            ),
+            ListTile(
+              leading: const Icon(LucideIcons.mail, color: Colors.orange),
+              title: Text(AppLocalizations.tr('support_email_dev'), style: TextStyle(color: c.textPrimary)),
+              subtitle: const Text('fixly.support@gmail.com'),
+              onTap: () {
+                Navigator.pop(context);
+                _openUrl('mailto:fixly.support@gmail.com');
+              },
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -1062,76 +1242,6 @@ class _SupportContactDialog extends StatelessWidget {
           child: Text(AppLocalizations.tr('btn_close'), style: TextStyle(color: c.primary)),
         )
       ],
-    );
-  }
-}
-
-// Кнопка сохранения профиля с реальным API-запросом
-class _SaveProfileButton extends StatefulWidget {
-  final TextEditingController nameCtrl;
-  final TextEditingController emailCtrl;
-  final AuthUser user;
-  final Function(AuthUser) onSave;
-
-  const _SaveProfileButton({
-    required this.nameCtrl,
-    required this.emailCtrl,
-    required this.user,
-    required this.onSave,
-  });
-
-  @override
-  State<_SaveProfileButton> createState() => _SaveProfileButtonState();
-}
-
-class _SaveProfileButtonState extends State<_SaveProfileButton> {
-  bool _saving = false;
-
-  Future<void> _save() async {
-    final name = widget.nameCtrl.text.trim();
-    if (name.length < 2) return;
-    setState(() => _saving = true);
-    try {
-      await AuthRepository.instance.updateProfile(fullName: name);
-      // Also update email via /api/profile PATCH
-      final email = widget.emailCtrl.text.trim();
-      if (email.isNotEmpty) {
-        await ApiClient.instance.patch('/api/profile', body: {
-          'fullName': name,
-          'email': email,
-        });
-      }
-      final updated = AuthUser(
-        id: widget.user.id,
-        roles: widget.user.roles,
-        fullName: name,
-        phone: widget.user.phone,
-        email: email.isNotEmpty ? email : widget.user.email,
-        activeOsiId: widget.user.activeOsiId,
-      );
-      widget.onSave(updated);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: _saving ? null : _save,
-      child: _saving
-          ? const SizedBox(
-              width: 20, height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-            )
-          : Text(AppLocalizations.tr('btn_save')),
     );
   }
 }

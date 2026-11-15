@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/theme/app_theme.dart';
+import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/core/announcements_repository.dart';
 import 'package:fixly_app/core/events_repository.dart';
 
@@ -20,6 +21,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   List<Announcement> _items = [];
   bool _loading = true;
   String? _error;
+  int _loadSeq = 0;
+  bool _openingSheet = false;
   StreamSubscription<SseEvent>? _sub;
   Timer? _debounce;
 
@@ -43,76 +46,87 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final items = await AnnouncementsRepository.instance.list();
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _items = items;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
-        _error = e.toString();
+        _error = e is ApiException ? e.message : e.toString();
         _loading = false;
       });
     }
   }
 
   Future<void> _open(Announcement a) async {
+    if (_openingSheet) return;
+    _openingSheet = true;
+    Future<void>? markReadFuture;
     if (!a.readByViewer) {
       // Best-effort — не блокируем открытие карточки, если сеть подвела.
-      AnnouncementsRepository.instance.markRead(a.id).catchError((_) {});
+      markReadFuture = AnnouncementsRepository.instance.markRead(a.id).catchError((_) {});
     }
     final c = AppColors.of(context);
-    if (!mounted) return;
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: c.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(AppDimens.spaceLg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (a.isPinned)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppDimens.spaceSm),
-                child: Row(
-                  children: [
-                    Icon(LucideIcons.pin, size: 14, color: c.secondary),
-                    const SizedBox(width: 4),
-                    Text('Закреплено',
-                        style: TextStyle(
-                            color: c.secondary,
-                            fontSize: AppTypography.caption,
-                            fontWeight: AppTypography.semibold)),
-                  ],
-                ),
-              ),
-            Text(a.title,
-                style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: AppTypography.screenTitle,
-                    fontWeight: AppTypography.bold)),
-            const SizedBox(height: AppDimens.spaceSm),
-            Text(DateFormat('d MMMM yyyy, HH:mm', 'ru').format(a.createdAt.toLocal()),
-                style: TextStyle(color: c.textTertiary, fontSize: AppTypography.caption)),
-            const SizedBox(height: AppDimens.spaceMd),
-            Text(a.body, style: TextStyle(color: c.textSecondary, fontSize: AppTypography.body)),
-            const SizedBox(height: AppDimens.spaceLg),
-          ],
+    try {
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: c.card,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
         ),
-      ),
-    );
-    if (mounted) _load(); // подтянуть актуальный readByViewer
+        builder: (_) => SingleChildScrollView(
+          padding: const EdgeInsets.all(AppDimens.spaceLg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (a.isPinned)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppDimens.spaceSm),
+                  child: Row(
+                    children: [
+                      Icon(LucideIcons.pin, size: 14, color: c.secondary),
+                      const SizedBox(width: 4),
+                      Text('Закреплено',
+                          style: TextStyle(
+                              color: c.secondary,
+                              fontSize: AppTypography.caption,
+                              fontWeight: AppTypography.semibold)),
+                    ],
+                  ),
+                ),
+              Text(a.title,
+                  style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: AppTypography.screenTitle,
+                      fontWeight: AppTypography.bold)),
+              const SizedBox(height: AppDimens.spaceSm),
+              Text(DateFormat('d MMMM yyyy, HH:mm', 'ru').format(a.createdAt.toLocal()),
+                  style: TextStyle(color: c.textTertiary, fontSize: AppTypography.caption)),
+              const SizedBox(height: AppDimens.spaceMd),
+              Text(a.body, style: TextStyle(color: c.textSecondary, fontSize: AppTypography.body)),
+              const SizedBox(height: AppDimens.spaceLg),
+            ],
+          ),
+        ),
+      );
+      if (markReadFuture != null) await markReadFuture;
+      if (mounted) _load(); // подтянуть актуальный readByViewer
+    } finally {
+      _openingSheet = false;
+    }
   }
 
   @override
@@ -131,25 +145,42 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDimens.spaceLg),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
-                          const SizedBox(height: AppDimens.spaceMd),
-                          OutlinedButton(onPressed: _load, child: const Text('Повторить')),
-                        ],
+                ? LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppDimens.spaceLg),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
+                                const SizedBox(height: AppDimens.spaceMd),
+                                OutlinedButton(onPressed: _load, child: const Text('Повторить')),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   )
                 : _items.isEmpty
-                    ? Center(
-                        child: Text('Объявлений пока нет',
-                            style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body)),
+                    ? LayoutBuilder(
+                        builder: (context, constraints) => SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                            child: Center(
+                              child: Text('Объявлений пока нет',
+                                  style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body)),
+                            ),
+                          ),
+                        ),
                       )
                     : ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.all(AppDimens.spaceMd),
                         itemCount: _items.length,
                         separatorBuilder: (_, __) => const SizedBox(height: AppDimens.spaceSm),
@@ -164,7 +195,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                                 color: c.card,
                                 borderRadius: BorderRadius.circular(AppDimens.radiusMd),
                                 border: Border.all(
-                                  color: a.isPinned ? c.secondary.withOpacity(0.5) : c.cardBorder,
+                                  color: a.isPinned ? c.secondary.withValues(alpha: 0.5) : c.cardBorder,
                                 ),
                               ),
                               child: Column(
@@ -188,13 +219,15 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                                           ),
                                         ),
                                       ),
-                                      if (!a.readByViewer)
+                                      if (!a.readByViewer) ...[
+                                        const SizedBox(width: 8),
                                         Container(
                                           width: 8,
                                           height: 8,
                                           decoration:
                                               BoxDecoration(color: c.primary, shape: BoxShape.circle),
                                         ),
+                                      ],
                                     ],
                                   ),
                                   const SizedBox(height: 4),

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/core/app_localizations.dart';
 import 'package:fixly_app/core/osi_repository.dart';
-import 'package:fixly_app/core/api_client.dart';
+import 'package:fixly_app/core/mobile_exports.dart';
 import 'package:fixly_app/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -54,6 +54,7 @@ class _PricingScreenState extends State<PricingScreen>
   // Реальные данные из БД
   bool _loadingApts = true;
   bool _aptVerified = false; // true = загружено из БД, счётчик заблокирован
+  bool _generatingInvoice = false;
   String? _verifiedBuildingAddress;
 
   late final AnimationController _fadeCtrl;
@@ -130,7 +131,8 @@ class _PricingScreenState extends State<PricingScreen>
   Future<void> _loadRealApartmentCount() async {
     try {
       final buildings = await OsiRepository.instance.listBuildings();
-      if (buildings.isEmpty || !mounted) {
+      if (!mounted) return;
+      if (buildings.isEmpty) {
         setState(() => _loadingApts = false);
         return;
       }
@@ -139,6 +141,7 @@ class _PricingScreenState extends State<PricingScreen>
       String? firstAddress = buildings.first.address;
       for (final b in buildings) {
         final apts = await OsiRepository.instance.listApartments(b.id);
+        if (!mounted) return;
         totalApts += apts.length;
       }
       if (!mounted) return;
@@ -150,6 +153,29 @@ class _PricingScreenState extends State<PricingScreen>
       });
     } catch (_) {
       if (mounted) setState(() => _loadingApts = false);
+    }
+  }
+
+  Future<void> _generateInvoice() async {
+    if (_generatingInvoice) return;
+    setState(() => _generatingInvoice = true);
+    try {
+      await openPricingInvoice(
+        plan: 'standard',
+        apartments: _apartments,
+        months: _months,
+        useRef: _useRef,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Не удалось сформировать счет: $e'),
+          backgroundColor: AppColors.of(context).danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _generatingInvoice = false);
     }
   }
 
@@ -240,12 +266,14 @@ class _PricingScreenState extends State<PricingScreen>
             children: [
               Icon(LucideIcons.calculator, size: 18, color: c.primary),
               const SizedBox(width: 8),
-              Text(
-                AppLocalizations.tr('pricing_calculator'),
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontWeight: AppTypography.semibold,
-                  fontSize: 15,
+              Expanded(
+                child: Text(
+                  AppLocalizations.tr('pricing_calculator'),
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontWeight: AppTypography.semibold,
+                    fontSize: 15,
+                  ),
                 ),
               ),
             ],
@@ -253,58 +281,56 @@ class _PricingScreenState extends State<PricingScreen>
           const SizedBox(height: AppDimens.spaceMd),
 
           // Apartments counter
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          AppLocalizations.tr('pricing_apartments_count'),
-                          style: TextStyle(color: c.textSecondary, fontSize: 12),
-                        ),
-                        if (_aptVerified) ...[  
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: c.success.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(LucideIcons.shieldCheck, size: 10, color: c.success),
-                                const SizedBox(width: 3),
-                                Text(
-                                  AppLocalizations.tr('pricing_verified'),
-                                  style: TextStyle(
-                                    color: c.success,
-                                    fontSize: 10,
-                                    fontWeight: AppTypography.semibold,
-                                  ),
-                                ),
-                              ],
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    AppLocalizations.tr('pricing_apartments_count'),
+                    style: TextStyle(color: c.textSecondary, fontSize: 12),
+                  ),
+                  if (_aptVerified)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: c.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(LucideIcons.shieldCheck, size: 10, color: c.success),
+                          const SizedBox(width: 3),
+                          Flexible(
+                            child: Text(
+                              AppLocalizations.tr('pricing_verified'),
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: c.success,
+                                fontSize: 10,
+                                fontWeight: AppTypography.semibold,
+                              ),
                             ),
                           ),
                         ],
-                      ],
-                    ),
-                    if (_verifiedBuildingAddress != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          _verifiedBuildingAddress!,
-                          maxLines: 1,
-                          style: TextStyle(color: c.textSecondary, fontSize: 11),
-                          overflow: TextOverflow.ellipsis,
-                        ),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
+              if (_verifiedBuildingAddress != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    _verifiedBuildingAddress!,
+                    maxLines: 1,
+                    style: TextStyle(color: c.textSecondary, fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 6),
@@ -379,22 +405,33 @@ class _PricingScreenState extends State<PricingScreen>
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () async {
-                final url = '${ApiClient.instance.baseUrl}/api/pricing/invoice?plan=standard&apartments=$_apartments&months=$_months&useRef=$_useRef';
-                final uri = Uri.parse(url);
-                if (await canLaunchUrl(uri)) {
-                  launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
-              },
-              icon: Icon(LucideIcons.fileText, size: 16, color: c.primary),
-              label: Text(
-                'Сформировать счет на оплату (PDF)',
-                style: TextStyle(color: c.primary, fontSize: 13, fontWeight: AppTypography.semibold),
+              onPressed: _generatingInvoice ? null : _generateInvoice,
+              icon: _generatingInvoice
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: c.primary,
+                      ),
+                    )
+                  : Icon(LucideIcons.fileText, size: 16, color: c.primary),
+              label: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  'Сформировать счет на оплату (PDF)',
+                  style: TextStyle(
+                    color: c.primary,
+                    fontSize: 13,
+                    fontWeight: AppTypography.semibold,
+                  ),
+                ),
               ),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: c.primary),
+                minimumSize: const Size(0, 44),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.radiusMd)),
-                padding: const EdgeInsets.symmetric(vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
             ),
           ),
@@ -509,6 +546,8 @@ class _PricingScreenState extends State<PricingScreen>
                     children: [
                       Text(
                         AppLocalizations.tr(p.nameKey),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: planColor,
                           fontSize: 10,
@@ -516,12 +555,16 @@ class _PricingScreenState extends State<PricingScreen>
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        _fmt(_total(p.price, p.hasRef)),
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 13,
-                          fontWeight: AppTypography.bold,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _fmt(_total(p.price, p.hasRef)),
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 13,
+                            fontWeight: AppTypography.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -642,45 +685,52 @@ class _PricingScreenState extends State<PricingScreen>
                         ],
                       ),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            Text(
-                              '${plan.price}',
-                              style: TextStyle(
-                                color: c.textPrimary,
-                                fontSize: 24,
-                                fontWeight: AppTypography.bold,
+                    const SizedBox(width: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 118),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Text(
+                                '${plan.price}',
+                                style: TextStyle(
+                                  color: c.textPrimary,
+                                  fontSize: 24,
+                                  fontWeight: AppTypography.bold,
+                                ),
                               ),
-                            ),
+                              Text(
+                                ' ₸',
+                                style: TextStyle(
+                                  color: c.textSecondary,
+                                  fontSize: 14,
+                                  fontWeight: AppTypography.semibold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            AppLocalizations.tr('pricing_per_apt'),
+                            textAlign: TextAlign.end,
+                            style: TextStyle(color: c.textSecondary, fontSize: 11),
+                          ),
+                          if (plan.hasRef)
                             Text(
-                              ' ₸',
+                              '${AppLocalizations.tr("pricing_ref_label")}: 50 ₸',
+                              textAlign: TextAlign.end,
                               style: TextStyle(
-                                color: c.textSecondary,
-                                fontSize: 14,
+                                color: planColor,
+                                fontSize: 11,
                                 fontWeight: AppTypography.semibold,
                               ),
                             ),
-                          ],
-                        ),
-                        Text(
-                          AppLocalizations.tr('pricing_per_apt'),
-                          style: TextStyle(color: c.textSecondary, fontSize: 11),
-                        ),
-                        if (plan.hasRef)
-                          Text(
-                            '${AppLocalizations.tr("pricing_ref_label")}: 50 ₸',
-                            style: TextStyle(
-                              color: planColor,
-                              fontSize: 11,
-                              fontWeight: AppTypography.semibold,
-                            ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -779,7 +829,10 @@ class _PricingScreenState extends State<PricingScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
                             AppLocalizations.tr('pricing_service_title'),
@@ -789,7 +842,6 @@ class _PricingScreenState extends State<PricingScreen>
                               fontSize: AppTypography.sectionTitle,
                             ),
                           ),
-                          const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                             decoration: BoxDecoration(
@@ -882,20 +934,34 @@ class _PricingScreenState extends State<PricingScreen>
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: () async {
                     final uri = Uri.parse('https://t.me/fixlyosibot?start=data_entry');
-                    if (await canLaunchUrl(uri)) {
-                      launchUrl(uri, mode: LaunchMode.externalApplication);
+                    try {
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      } else if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Не удалось открыть Telegram')),
+                        );
+                      }
+                    } catch (_) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Не удалось открыть Telegram')),
+                        );
+                      }
                     }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: serviceColor,
                     foregroundColor: Colors.white,
+                    minimumSize: const Size(0, 44),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(AppDimens.radiusMd),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
                   child: Text(
                     AppLocalizations.tr('pricing_service_btn'),
@@ -942,13 +1008,32 @@ class _PricingScreenState extends State<PricingScreen>
             child: ElevatedButton.icon(
               onPressed: () async {
                 final uri = Uri.parse('https://t.me/fixlyosibot');
-                if (await canLaunchUrl(uri)) launchUrl(uri, mode: LaunchMode.externalApplication);
+                try {
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  } else if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Не удалось открыть Telegram')),
+                    );
+                  }
+                } catch (_) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Не удалось открыть Telegram')),
+                    );
+                  }
+                }
               },
               icon: const Icon(LucideIcons.messageCircle, size: 18),
-              label: Text(AppLocalizations.tr('pricing_cta_btn')),
+              label: Text(
+                AppLocalizations.tr('pricing_cta_btn'),
+                overflow: TextOverflow.ellipsis,
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: c.primary,
                 foregroundColor: Colors.white,
+                minimumSize: const Size(0, AppDimens.primaryTapTarget),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(AppDimens.radiusMd),
                 ),

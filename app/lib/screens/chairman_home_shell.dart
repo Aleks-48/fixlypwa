@@ -1,3 +1,4 @@
+import 'ai_assistant_screen.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -5,6 +6,7 @@ import 'package:fixly_app/core/app_localizations.dart';
 import 'package:fixly_app/core/analytics_repository.dart';
 import 'package:fixly_app/main.dart' show appLanguage;
 import 'package:fixly_app/theme/app_theme.dart';
+import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/core/auth_repository.dart';
 import 'package:fixly_app/core/osi_repository.dart';
 import 'package:fixly_app/core/events_repository.dart';
@@ -18,8 +20,7 @@ import 'package:fixly_app/screens/chairman_analytics_screen.dart';
 import 'package:fixly_app/screens/pricing_screen.dart';
 import 'package:fixly_app/screens/legal_docs_sheet.dart';
 import 'package:fixly_app/screens/video_instructions_sheet.dart';
-import 'package:fixly_app/core/api_client.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../core/mobile_exports.dart';
 
 // Оболочка председателя:
 // оперативные функции в приложении (заявки дома, объявления, голосования, уведомления);
@@ -35,11 +36,20 @@ class ChairmanHomeShell extends StatefulWidget {
 
 class _ChairmanHomeShellState extends State<ChairmanHomeShell> {
   int _tab = 0;
+  late AuthUser _user = widget.user;
 
   @override
   void initState() {
     super.initState();
     EventsRepository.instance.connect();
+  }
+
+  @override
+  void didUpdateWidget(covariant ChairmanHomeShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user != widget.user) {
+      _user = widget.user;
+    }
   }
 
   @override
@@ -52,11 +62,14 @@ class _ChairmanHomeShellState extends State<ChairmanHomeShell> {
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final pages = [
-      _ChairmanHomeTab(user: widget.user),
+      _ChairmanHomeTab(user: _user),
       const ChairmanRequestsScreen(),
       const ChairmanAnnouncementsScreen(),
       const ChairmanPollsScreen(),
-      _ChairmanMoreTab(user: widget.user),
+      _ChairmanMoreTab(
+        user: _user,
+        onUserUpdated: (updated) => setState(() => _user = updated),
+      ),
     ];
 
     return ValueListenableBuilder<String>(
@@ -113,6 +126,7 @@ class _ChairmanHomeTabState extends State<_ChairmanHomeTab> {
   List<PendingJoinRequest> _joinRequests = [];
   bool _loading = true;
   final Set<String> _resolvingIds = {};
+  int _loadSeq = 0;
 
   @override
   void initState() {
@@ -121,8 +135,9 @@ class _ChairmanHomeTabState extends State<_ChairmanHomeTab> {
   }
 
   Future<void> _load() async {
-    List<Building> bList = [];
-    List<PendingJoinRequest> reqList = [];
+    final seq = ++_loadSeq;
+    List<Building>? bList;
+    List<PendingJoinRequest>? reqList;
     try {
       bList = await OsiRepository.instance.listBuildings();
     } catch (_) {}
@@ -130,20 +145,48 @@ class _ChairmanHomeTabState extends State<_ChairmanHomeTab> {
       reqList = await OsiRepository.instance.listOsiJoinRequests();
     } catch (_) {}
 
-    if (mounted) {
+    if (mounted && seq == _loadSeq) {
       setState(() {
-        _buildings = bList;
-        _joinRequests = reqList;
+        if (bList != null) _buildings = bList;
+        if (reqList != null) _joinRequests = reqList;
         _loading = false;
       });
     }
   }
 
   Future<void> _resolveJoinRequest(String id) async {
+    if (_resolvingIds.contains(id)) return;
     setState(() => _resolvingIds.add(id));
     try {
       await OsiRepository.instance.resolveJoinRequest(id);
-      if (mounted) setState(() => _joinRequests.removeWhere((r) => r.id == id));
+      if (mounted) {
+        setState(() => _joinRequests.removeWhere((r) => r.id == id));
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('Заявка обработана')));
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(e.message),
+              backgroundColor: AppColors.of(context).danger,
+            ),
+          );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('Не удалось обработать заявку: $e'),
+              backgroundColor: AppColors.of(context).danger,
+            ),
+          );
+      }
     } finally {
       if (mounted) setState(() => _resolvingIds.remove(id));
     }
@@ -299,20 +342,26 @@ class _MiniAnalyticsWidgetState extends State<_MiniAnalyticsWidget> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(LucideIcons.barChart3, color: c.primary, size: 20),
-                  const SizedBox(width: AppDimens.spaceSm),
-                  Text(
-                    'Аналитика дома',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontWeight: AppTypography.bold,
-                      fontSize: AppTypography.body,
+              Expanded(
+                child: Row(
+                  children: [
+                    Icon(LucideIcons.barChart3, color: c.primary, size: 20),
+                    const SizedBox(width: AppDimens.spaceSm),
+                    Flexible(
+                      child: Text(
+                        'Аналитика дома',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontWeight: AppTypography.bold,
+                          fontSize: AppTypography.body,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               InkWell(
                 onTap: () => Navigator.push(
                   context,
@@ -389,11 +438,13 @@ class _JoinRequestsSection extends StatelessWidget {
           children: [
             Icon(LucideIcons.userCheck, color: c.primary, size: 18),
             const SizedBox(width: AppDimens.spaceXs),
-            Text('Заявки на подключение (${requests.length})',
-                style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: AppTypography.sectionTitle,
-                    fontWeight: AppTypography.bold)),
+            Expanded(
+              child: Text('Заявки на подключение (${requests.length})',
+                  style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: AppTypography.sectionTitle,
+                      fontWeight: AppTypography.bold)),
+            ),
           ],
         ),
         const SizedBox(height: AppDimens.spaceSm),
@@ -425,6 +476,10 @@ class _JoinRequestsSection extends StatelessWidget {
                 const SizedBox(width: AppDimens.spaceSm),
                 OutlinedButton(
                   onPressed: resolvingIds.contains(r.id) ? null : () => onResolve(r.id),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    minimumSize: const Size(0, AppDimens.minTapTarget),
+                  ),
                   child: Text(resolvingIds.contains(r.id) ? '…' : 'Обработано'),
                 ),
               ],
@@ -464,23 +519,61 @@ class _EmptyBuildingsCard extends StatelessWidget {
   }
 }
 
-class _ChairmanMoreTab extends StatelessWidget {
+class _ChairmanMoreTab extends StatefulWidget {
   final AuthUser user;
-  const _ChairmanMoreTab({required this.user});
+  final ValueChanged<AuthUser>? onUserUpdated;
+  const _ChairmanMoreTab({required this.user, this.onUserUpdated});
 
-  Future<void> _logout(BuildContext context) async {
-    await AuthRepository.instance.logout();
-    if (!context.mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (_) => false,
-    );
+  @override
+  State<_ChairmanMoreTab> createState() => _ChairmanMoreTabState();
+}
+
+class _ChairmanMoreTabState extends State<_ChairmanMoreTab> {
+  bool _loggingOut = false;
+  bool _openingReport = false;
+
+  Future<void> _logout() async {
+    if (_loggingOut) return;
+    setState(() => _loggingOut = true);
+    try {
+      await AuthRepository.instance.logout();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (_) => false,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось выйти: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
+  }
+
+  Future<void> _openAnnualReport() async {
+    if (_openingReport) return;
+    _openingReport = true;
+    try {
+      await openServerDocument(ServerDocument.annualReport);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось открыть документ')),
+        );
+      }
+    } finally {
+      _openingReport = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final user = widget.user;
     return Scaffold(
       backgroundColor: c.background,
       appBar: AppBar(
@@ -524,18 +617,20 @@ class _ChairmanMoreTab extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      user.fullName ?? AppLocalizations.tr('role_chairman'),
-                      style: TextStyle(
-                        fontSize: AppTypography.sectionTitle,
-                        fontWeight: AppTypography.bold,
-                        color: c.textPrimary,
+                    Flexible(
+                      child: Text(
+                        user.fullName ?? AppLocalizations.tr('role_chairman'),
+                        style: TextStyle(
+                          fontSize: AppTypography.sectionTitle,
+                          fontWeight: AppTypography.bold,
+                          color: c.textPrimary,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
                     ),
                     IconButton(
                       icon: Icon(LucideIcons.edit2, size: 16, color: c.primary),
-                      onPressed: () => _showEditNameDialog(context, user),
+                      onPressed: () => _showEditNameDialog(user),
                       tooltip: AppLocalizations.tr('profile_edit'),
                     ),
                   ],
@@ -613,12 +708,7 @@ class _ChairmanMoreTab extends StatelessWidget {
             c,
             LucideIcons.fileText,
             'Сформировать Годовой Отчет',
-            () async {
-              final uri = Uri.parse('${ApiClient.instance.baseUrl}/api/reports/annual');
-              if (await canLaunchUrl(uri)) {
-                launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-            },
+            _openAnnualReport,
           ),
           _menuTile(
             context,
@@ -635,6 +725,8 @@ class _ChairmanMoreTab extends StatelessWidget {
             () => LegalDocsSheet.show(context, initialTab: LegalDocTab.chairman),
           ),
 
+          _menuTile(context, c, LucideIcons.bot, 'AI-помощник',
+            () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AiAssistantScreen()))),
           // Переключатель языка
           Container(
             margin: const EdgeInsets.only(bottom: AppDimens.spaceSm),
@@ -683,8 +775,14 @@ class _ChairmanMoreTab extends StatelessWidget {
           SizedBox(
             height: AppDimens.primaryTapTarget,
             child: OutlinedButton.icon(
-              onPressed: () => _logout(context),
-              icon: Icon(LucideIcons.logOut, color: c.danger),
+              onPressed: _loggingOut ? null : _logout,
+              icon: _loggingOut
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: c.danger),
+                    )
+                  : Icon(LucideIcons.logOut, color: c.danger),
               label: Text(
                 AppLocalizations.tr('profile_logout'), 
                 style: TextStyle(
@@ -705,52 +803,17 @@ class _ChairmanMoreTab extends StatelessWidget {
     );
   }
 
-  void _showEditNameDialog(BuildContext context, AuthUser user) {
-    final c = AppColors.of(context);
-    final ctrl = TextEditingController(text: user.fullName ?? '');
-    showDialog(
+  Future<void> _showEditNameDialog(AuthUser user) async {
+    final updated = await showDialog<AuthUser>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.card,
-        title: Text(AppLocalizations.tr('profile_edit'), style: TextStyle(color: c.textPrimary)),
-        content: TextField(
-          controller: ctrl,
-          style: TextStyle(color: c.textPrimary),
-          decoration: InputDecoration(
-            labelText: AppLocalizations.tr('label_full_name'),
-            labelStyle: TextStyle(color: c.textSecondary),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(AppLocalizations.tr('btn_cancel')),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final newName = ctrl.text.trim();
-              if (newName.isEmpty) return;
-              Navigator.pop(ctx);
-              try {
-                await AuthRepository.instance.updateProfile(fullName: newName);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(AppLocalizations.tr('profile_updated'))),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Ошибка обновления: $e')),
-                  );
-                }
-              }
-            },
-            child: Text(AppLocalizations.tr('btn_save')),
-          ),
-        ],
-      ),
+      builder: (_) => _EditChairmanNameDialog(user: user),
     );
+    if (updated != null && mounted) {
+      widget.onUserUpdated?.call(updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.tr('profile_updated'))),
+      );
+    }
   }
 
   Widget _row(AppColors c, IconData icon, String label) {
@@ -787,6 +850,116 @@ class _ChairmanMoreTab extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _EditChairmanNameDialog extends StatefulWidget {
+  final AuthUser user;
+  const _EditChairmanNameDialog({required this.user});
+
+  @override
+  State<_EditChairmanNameDialog> createState() => _EditChairmanNameDialogState();
+}
+
+class _EditChairmanNameDialogState extends State<_EditChairmanNameDialog> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.user.fullName ?? '');
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final newName = _ctrl.text.trim();
+    if (newName.isEmpty) {
+      setState(() => _error = 'Укажите ФИО');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await AuthRepository.instance.updateProfile(fullName: newName);
+      if (!mounted) return;
+      final updated = AuthUser(
+        id: widget.user.id,
+        email: widget.user.email,
+        phone: widget.user.phone,
+        fullName: newName,
+        activeOsiId: widget.user.activeOsiId,
+        osiName: widget.user.osiName,
+        apartmentNumber: widget.user.apartmentNumber,
+        buildingAddress: widget.user.buildingAddress,
+        roles: widget.user.roles,
+      );
+      Navigator.pop(context, updated);
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _saving = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Ошибка обновления: $e';
+          _saving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return AlertDialog(
+      backgroundColor: c.card,
+      title: Text(AppLocalizations.tr('profile_edit'), style: TextStyle(color: c.textPrimary)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _ctrl,
+              enabled: !_saving,
+              style: TextStyle(color: c.textPrimary),
+              decoration: InputDecoration(
+                labelText: AppLocalizations.tr('label_full_name'),
+                labelStyle: TextStyle(color: c.textSecondary),
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: AppDimens.spaceSm),
+              Text(_error!, style: TextStyle(color: c.danger, fontSize: AppTypography.caption)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: Text(AppLocalizations.tr('btn_cancel')),
+        ),
+        ElevatedButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : Text(AppLocalizations.tr('btn_save')),
+        ),
+      ],
     );
   }
 }

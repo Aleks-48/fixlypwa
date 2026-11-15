@@ -5,7 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/theme/app_theme.dart';
 import 'package:fixly_app/core/api_client.dart';
-import 'package:fixly_app/core/requests_repository.dart';
+import 'create_request_screen.dart';
 import 'package:fixly_app/core/request_labels.dart';
 import 'package:fixly_app/core/app_localizations.dart';
 
@@ -20,13 +20,18 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
   final ImagePicker _picker = ImagePicker();
   File? _imageFile;
   bool _isAnalyzing = false;
+  bool _picking = false;
+  int _analyzeSeq = 0;
 
   String? _detectedCategoryKey;
   String? _detectedTitle;
   String? _detectedDescription;
+  String? _analyzeError;
   double _confidence = 0.0;
 
   Future<void> _pickImage(ImageSource source) async {
+    if (_picking || _isAnalyzing) return;
+    _picking = true;
     try {
       final XFile? picked = await _picker.pickImage(
         source: source,
@@ -34,12 +39,13 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
         maxHeight: 1024,
         imageQuality: 80,
       );
-      if (picked != null) {
+      if (mounted && picked != null) {
         setState(() {
           _imageFile = File(picked.path);
           _detectedCategoryKey = null;
           _detectedTitle = null;
           _detectedDescription = null;
+          _analyzeError = null;
         });
         _analyzeWithGroqAi();
       }
@@ -49,14 +55,19 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
           SnackBar(content: Text('Ошибка при выборе фото: $e')),
         );
       }
+    } finally {
+      _picking = false;
     }
   }
 
   Future<void> _analyzeWithGroqAi() async {
-    if (_imageFile == null) return;
+    if (_imageFile == null || _isAnalyzing) return;
+    final seq = ++_analyzeSeq;
 
     setState(() {
       _isAnalyzing = true;
+      _detectedCategoryKey = null;
+      _analyzeError = null;
     });
 
     try {
@@ -64,62 +75,50 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
       final base64Image = base64Encode(bytes);
 
       // Запрос к нашему серверному Groq Llama-3 Vision AI
-      final response = await ApiClient.instance.post('/api/ai/scan-defect', body: {
+      final rawRes = await ApiClient.instance.post('/api/ai/scan-defect', timeout: const Duration(seconds: 130), body: {
         'imageBase64': base64Image,
-      }) as Map<String, dynamic>;
+      });
 
-      if (mounted) {
-        setState(() {
-          _isAnalyzing = false;
-          _detectedCategoryKey = response['category'] as String? ?? 'OTHER';
-          _detectedTitle = response['title'] as String? ?? 'Обнаружен дефект';
-          _detectedDescription = response['description'] as String? ?? 'Требуется осмотр специалиста.';
-          _confidence = (response['confidence'] as num?)?.toDouble() ?? 0.90;
-        });
+      if (!mounted || seq != _analyzeSeq) return;
+      if (rawRes is! Map<String, dynamic>) {
+        throw ApiException('BAD_RESPONSE', 'Некорректный ответ сервиса анализа', 500);
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isAnalyzing = false;
-          // Фолбэк в случае отсутствия связи
-          _detectedCategoryKey = 'PLUMBING';
-          _detectedTitle = 'Поломка или дефект оборудования';
-          _detectedDescription = 'На снимке зафиксированы признаки неисправности. Рекомендуется вызвать специалиста.';
-          _confidence = 0.88;
-        });
-      }
+      final rawConf = rawRes['confidence'];
+      final confidence = (rawConf is num
+              ? rawConf.toDouble()
+              : (double.tryParse(rawConf?.toString() ?? '') ?? 0.0))
+          .clamp(0.0, 1.0);
+
+      setState(() {
+        _isAnalyzing = false;
+        _detectedCategoryKey = rawRes['category']?.toString() ?? 'OTHER';
+        _detectedTitle = rawRes['title']?.toString() ?? 'Обнаружен дефект';
+        _detectedDescription = rawRes['description']?.toString() ?? 'Требуется осмотр специалиста.';
+        _confidence = confidence;
+      });
+    } on ApiException catch (e) {
+      if (!mounted || seq != _analyzeSeq) return;
+      setState(() {
+        _isAnalyzing = false;
+        _detectedCategoryKey = null;
+        _analyzeError = e.message;
+      });
+    } catch (_) {
+      if (!mounted || seq != _analyzeSeq) return;
+      setState(() {
+        _isAnalyzing = false;
+        _detectedCategoryKey = null;
+        _analyzeError = 'Не удалось распознать дефект. Опишите проблему в заявке или повторите анализ.';
+      });
     }
   }
 
   Future<void> _createRequestFromScan() async {
-    if (_detectedCategoryKey == null || _detectedDescription == null) return;
-
-    final c = AppColors.of(context);
-    try {
-      await RequestsRepository.instance.create(
-        category: _detectedCategoryKey!,
-        text: '[AI Сканер]: $_detectedTitle\n\n$_detectedDescription',
-      );
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Заявка успешно создана на основе ИИ-сканирования!'),
-          backgroundColor: c.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка при создании заявки: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
+    final id = await Navigator.push<String>(context, MaterialPageRoute(
+      builder: (_) => CreateRequestScreen(photoPath: _imageFile?.path,
+          category: _detectedCategoryKey ?? 'OTHER', description: _detectedDescription),
+    ));
+    if (mounted && id != null) Navigator.pop(context);
   }
 
   @override
@@ -162,10 +161,17 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
                     ? Stack(
                         fit: StackFit.expand,
                         children: [
-                          Image.file(_imageFile!, fit: BoxFit.cover),
+                          Image.file(
+                            _imageFile!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Center(
+                              child: Icon(LucideIcons.imageOff, size: 48, color: c.textTertiary),
+                            ),
+                          ),
                           if (_isAnalyzing)
                             Container(
                               color: Colors.black54,
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
                               child: Center(
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
@@ -174,6 +180,7 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
                                     const SizedBox(height: 16),
                                     const Text(
                                       'Groq Llama-3 Vision анализирует фото...',
+                                      textAlign: TextAlign.center,
                                       style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                                     ),
                                   ],
@@ -183,34 +190,39 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
                         ],
                       )
                     : Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(LucideIcons.camera, size: 56, color: c.textTertiary),
-                            const SizedBox(height: 12),
-                            Text(
-                              AppLocalizations.tr('scanner_hint'),
-                              style: TextStyle(color: c.textTertiary, fontSize: 14),
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                ElevatedButton.icon(
-                                  onPressed: () => _pickImage(ImageSource.camera),
-                                  icon: const Icon(LucideIcons.camera, size: 16),
-                                  label: Text(AppLocalizations.tr('scanner_camera')),
-                                  style: ElevatedButton.styleFrom(backgroundColor: c.primary),
-                                ),
-                                const SizedBox(width: 12),
-                                OutlinedButton.icon(
-                                  onPressed: () => _pickImage(ImageSource.gallery),
-                                  icon: const Icon(LucideIcons.image, size: 16),
-                                  label: Text(AppLocalizations.tr('scanner_gallery')),
-                                ),
-                              ],
-                            ),
-                          ],
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(LucideIcons.camera, size: 56, color: c.textTertiary),
+                              const SizedBox(height: 12),
+                              Text(
+                                AppLocalizations.tr('scanner_hint'),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: c.textTertiary, fontSize: 14),
+                              ),
+                              const SizedBox(height: 16),
+                              Wrap(
+                                alignment: WrapAlignment.center,
+                                spacing: 12,
+                                runSpacing: 10,
+                                children: [
+                                  ElevatedButton.icon(
+                                    onPressed: () => _pickImage(ImageSource.camera),
+                                    icon: const Icon(LucideIcons.camera, size: 16),
+                                    label: Text(AppLocalizations.tr('scanner_camera')),
+                                    style: ElevatedButton.styleFrom(backgroundColor: c.primary),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: () => _pickImage(ImageSource.gallery),
+                                    icon: const Icon(LucideIcons.image, size: 16),
+                                    label: Text(AppLocalizations.tr('scanner_gallery')),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
               ),
@@ -232,6 +244,14 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
 
             const SizedBox(height: AppDimens.spaceMd),
 
+            if (_imageFile != null && !_isAnalyzing && _detectedCategoryKey == null) ...[
+              Text(
+                _analyzeError ?? 'Не удалось распознать дефект. Опишите проблему в заявке или повторите анализ.',
+                style: TextStyle(color: _analyzeError != null ? c.danger : c.textPrimary),
+              ),
+              TextButton(onPressed: _analyzeWithGroqAi, child: const Text('Повторить анализ')),
+              ElevatedButton(onPressed: _createRequestFromScan, child: const Text('Заполнить заявку с фото')),
+            ],
             // Карточка результатов анализа Groq AI
             if (_detectedCategoryKey != null) ...[
               Container(
@@ -260,7 +280,7 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Groq AI Vision (${(_confidence * 100).toStringAsFixed(0)}% точность)',
+                                'Groq AI Vision (${(_confidence * 100).toStringAsFixed(0)}% уверенность модели)',
                                 style: TextStyle(
                                   color: c.primary,
                                   fontWeight: AppTypography.bold,
@@ -310,6 +330,7 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
                   icon: const Icon(LucideIcons.send, color: Colors.white, size: 18),
                   label: const Text(
                     'Создать заявку по результатам ИИ',
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                   style: ElevatedButton.styleFrom(backgroundColor: c.primary),

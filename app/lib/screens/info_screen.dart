@@ -24,6 +24,7 @@ class _InfoScreenState extends State<InfoScreen> {
   List<InfoItem> _items = [];
   bool _loading = true;
   String? _error;
+  int _loadSeq = 0;
 
   @override
   void initState() {
@@ -32,19 +33,20 @@ class _InfoScreenState extends State<InfoScreen> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final items = await InfoRepository.instance.list();
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _items = items;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -60,7 +62,11 @@ class _InfoScreenState extends State<InfoScreen> {
       appBar: AppBar(
         backgroundColor: c.background,
         elevation: 0,
-        title: Text('Инфо о доме', style: TextStyle(color: c.textPrimary)),
+        title: Text(
+          'Инфо о доме',
+          style: TextStyle(color: c.textPrimary),
+          overflow: TextOverflow.ellipsis,
+        ),
         iconTheme: IconThemeData(color: c.textPrimary),
       ),
       body: RefreshIndicator(
@@ -68,25 +74,57 @@ class _InfoScreenState extends State<InfoScreen> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDimens.spaceLg),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
-                          const SizedBox(height: AppDimens.spaceMd),
-                          OutlinedButton(onPressed: _load, child: const Text('Повторить')),
-                        ],
-                      ),
+                ? LayoutBuilder(
+                    builder: (_, constraints) => ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        ConstrainedBox(
+                          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppDimens.spaceLg),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(_error!,
+                                      style: TextStyle(color: c.danger),
+                                      textAlign: TextAlign.center),
+                                  const SizedBox(height: AppDimens.spaceMd),
+                                  OutlinedButton(
+                                      onPressed: _load, child: const Text('Повторить')),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   )
                 : _items.isEmpty
-                    ? Center(
-                        child: Text('Раздел пока пуст',
-                            style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body)),
+                    ? LayoutBuilder(
+                        builder: (_, constraints) => ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [
+                            ConstrainedBox(
+                              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                              child: Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(AppDimens.spaceLg),
+                                  child: Text(
+                                    'Раздел пока пуст',
+                                    style: TextStyle(
+                                        color: c.textTertiary,
+                                        fontSize: AppTypography.body),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       )
                     : ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.all(AppDimens.spaceMd),
                         itemCount: _items.length,
                         separatorBuilder: (_, __) => const SizedBox(height: AppDimens.spaceSm),
@@ -106,7 +144,7 @@ class _InfoScreenState extends State<InfoScreen> {
                                   width: 40,
                                   height: 40,
                                   decoration: BoxDecoration(
-                                    color: c.primary.withOpacity(0.1),
+                                    color: c.primary.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(AppDimens.radiusSm),
                                   ),
                                   child: Icon(_typeIcons[item.type] ?? LucideIcons.info,

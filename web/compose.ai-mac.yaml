@@ -1,0 +1,5 @@
+services:
+  app:
+    environment:
+      LLM_PROVIDER: ollama
+      OLLAMA_URL: http://host.docker.internal:11434

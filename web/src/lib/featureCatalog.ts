@@ -206,10 +206,9 @@ export const FEATURE_CATALOG: FeatureCatalogItem[] = [
   {
     key: "legal-voting",
     label: "Юридически значимые голосования",
-    href: "/voting", // <-- Добавлена активная ссылка. Замените "/voting" на ваш реальный URL/роут
-    site: "done",
-    resident: "done",
-    chairman: "done",
+    site: "soon",
+    resident: "soon",
+    chairman: "soon",
     note: "Официальные голосования с подсчётом кворума по площади и фиксацией подписей.",
   },
 ];

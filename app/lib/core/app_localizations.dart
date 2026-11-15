@@ -569,12 +569,13 @@ class AppLocalizations {
     if (text.trim().isEmpty) return text;
     try {
       final currentLang = appLanguage.value;
-      final res = await ApiClient.instance.post('/translate', body: {
+      final res = await ApiClient.instance.post('/api/translate', body: {
         'text': text,
         'targetLang': currentLang,
       });
-      if (res is Map<String, dynamic> && res['translatedText'] is String) {
-        return res['translatedText'] as String;
+      if (res is Map && res['translatedText'] is String) {
+        final translated = res['translatedText'] as String;
+        if (translated.isNotEmpty) return translated;
       }
       return text;
     } catch (_) {

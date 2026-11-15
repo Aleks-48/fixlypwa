@@ -16,9 +16,11 @@
 10. [Полный сценарий и промпты: Серия 16 («Свидание в бойлерной»)](#10-серия-16-свидание-в-бойлерной)
 11. [Полный сценарий и промпты: Серия 17 («Чай у Бабушки»)](#11-серия-17-чай-у-бабушки)
 12. [Полный сценарий и промпты: Серия 18 («Битва за чердак»)](#12-серия-18-битва-за-чердак)
-13. [Синопсисы и концепции будущих серий 19–30](#13-синопсисы-будущих-серий-1930)
-14. [Реестр медиа-активов, обложек и каталогов файлов](#14-реестр-медиа-активов-и-обложек)
-15. [Производственный регламент создания новых серий (SOP)](#15-производственный-регламент-создания-серий)
+13. [Полный сценарий и промпты: Серия 19 («Ночной рейд за печатью»)](#13-серия-19-ночной-рейд-за-печатью)
+14. [Полный сценарий и промпты: Серия 20 («Ванна с пеной и 380 Вольт»](#14-серия-20-ванна-с-пеной-и-380-вольт)
+15. [Синопсисы и концепции будущих серий 21–30](#15-синопсисы-будущих-серий-2130)
+16. [Реестр медиа-активов, обложек и каталогов файлов](#16-реестр-медиа-активов-и-обложек)
+17. [Производственный регламент создания новых серий (SOP)](#17-производственный-регламент-создания-серий)
 
 ---
 
@@ -323,10 +325,93 @@ Vertical 9:16 video. Dramatic close-up on Debbie's furious face, slightly smudge
 
 ---
 
-## 13. СИНОПСИСЫ БУДУЩИХ СЕРИЙ 19–30
+## 13. СЕРИЯ 19: «НОЧНОЙ РЕЙД ЗА ПЕЧАТЬЮ ОСИ»
 
-* **Серия 19: «Ночной рейд за печатью ОСИ»** — Дебби крадётся ночью в кабинет председателя взломать сейф с печатью. В сейфе сидит Рука («Вещь»), которая обыгрывает её в покер и штампует надпись «ОТКАЗАНО» прямо ей на лоб. Нативный контекст: цифровая ЭЦП вместо мокрой печати.
-* **Серия 20: «Ванна с пеной и 380 Вольт»** — Дебби роняет силовой кабель в ванну к Фестеру. Свет гаснет во всем районе. Сквозь дым сияющий Фестер пускает пузыри: *«Дорогая, лучший гидромассаж!»*. Нативный контекст: энергобезопасность, вызов аварийного электрика.
+* **Технический формат:** Генерация в **Omni Flash 1.2** (3 непрерывные сцены по **15 секунд** = 45 секунд суммарно). Идеальный хронометраж под максимальное удержание (Retention >85%).
+* **Философия Zero Direct Ads:** Абсолютно нативный контраст: Дебби ищет архаичную синюю печать из 90-х, чтобы украсть фонд капремонта, но натыкается на цифровую реальность — настенный планшет с подтверждением *«Система ЭЦП активна: все решения защищены в облаке РК, мокрые печати отменены»*. Никаких рекламных призывов.
+* **Обложки серии (9:16):**
+  * `cover_ep19_safe_raid.jpg` (YouTube Shorts / Reels)
+  * `cover_ep19_safe_raid_1793895298202.jpg` (TikTok мем-версия со штампом «ОТКАЗАНО»)
+
+### 📜 Сценарий и 15-секундные 4K-промпты (Omni Flash 1.2)
+
+**Сцена 1 (0:00–0:15) — Проникновение и взлом сейфа (15 сек)**
+```text
+Vertical 9:16 video. Clean modern digital cinematography, sharp 4k, no film grain. Inside a pitch-black moody apartment committee office at night, only illuminated by a sharp narrow beam of a tactical flashlight. @Debbie in a sleek black stealth turtleneck and leather gloves creeps cautiously on high heels across the dark room. At 5 seconds, @Debbie stops in front of a heavy vintage dark-green steel wall safe, smiling with wicked ambition. She delicately turns the brass combination lock dial back and forth. At 10 seconds, with a heavy metallic clunk, the thick steel door slowly swings open, casting a warm golden atmospheric glow directly onto @Debbie's excited face.
+```
+* **Тайминг озвучки [Voiceover & Sound FX]:**
+  * `0:00–0:05`: *[Звук: Приглушенный цокот каблуков и луч фонарика. Дебби (шепотом):]* «Полночь... Кабинет председателя пуст!»
+  * `0:05–0:10`: *[Звук: Металлические щелчки замка сейфа: щелк-щелк-клац!]* «Секундное дело для профессионала... Где же сейф?»
+  * `0:10–0:15`: *[Звук: Тяжелый скрип массивной стальной двери. Лицо Дебби озаряет золотой свет:]* «Забираю печать ОСИ — и тридцать миллионов капремонта переходят на мой счет!»
+
+---
+
+**Сцена 2 (0:15–0:30) — Неожиданный крупье и цифровой нокаут (15 сек)**
+```text
+Vertical 9:16 video. Smooth camera push-in toward the open safe interior. Clean modern digital cinematography, 4k, crisp textures. Resting comfortably inside the spacious safe on a miniature green velvet poker mat is @Thing wearing an elegant crisp white tuxedo cuff. At 5 seconds, @Thing playfully shuffles a deck of playing cards and fans out a winning royal flush, tapping its fingers rhythmically against the metal shelf. Mounted beside it on the safe wall, a modern sleek tablet displays a glowing green status: 'СИСТЕМА ЭЦП: ДОКУМЕНТЫ ЗАЩИЩЕНЫ. МОКРЫЕ ПЕЧАТИ ОТМЕНЕНЫ'. At 10 seconds, @Debbie leans forward, her eyes wide in comedic shock and dropping her jaw in disbelief. @Thing points at the tablet screen, then calmly picks up a heavy wooden ink stamp.
+```
+* **Тайминг озвучки [Voiceover & Sound FX]:**
+  * `0:15–0:20`: *[Дебби (вскрикивает от неожиданности):]* «Что за чертовщина?! Рука в смокинге?! А где синяя гербовая печать дома?!»
+  * `0:20–0:25`: *[Звук: Шелест игральных карт и четкий стук пальцев: тук-тук-тук! Закадровый голос:]* «Вещь нагло подмигивает пальцами и выкладывает роял-флеш...»
+  * `0:25–0:30`: *[Дебби (читает с экрана в шоке):]* «"Все документы дома защищены цифровой ЭЦП... Мокрые печати упразднены?!" Ты издеваешься?!»
+
+---
+
+**Сцена 3 (0:30–0:45) — Штамп правосудия и клиффхэнгер (15 сек)**
+```text
+Vertical 9:16 video. Dynamic action slapstick comedy, sharp 4k, cinematic rim lighting, zero noise. At 0 seconds, @Thing springs into action, firmly dabbing the wooden stamp onto a red ink pad. @Thing makes an agile acrobatic jump straight toward the camera. At 5 seconds, @Thing firmly plants the stamp right in the center of @Debbie's forehead with comedic precision! @Thing springs back to the safe, giving an enthusiastic thumbs-up gesture. At 10 seconds, @Debbie stumbles backward into the moonlit hallway, clutching her head in furious humiliation. On @Debbie's forehead, bright red bold ink clearly reads 'ОТКАЗАНО'. @Debbie shakes her fist aggressively, teeth clenched with vengeance.
+```
+* **Тайминг озвучки [Voiceover & Sound FX]:**
+  * `0:30–0:35`: *[Звук: Сочный шлепок штампа: ЧПОК! Вещь победно показывает палец вверх (👍). Закадровый голос:]* «Партия за председателем! Бумажные печати — прошлый век!»
+  * `0:35–0:40`: *[Дебби (в ярости оттирает лоб с красной надписью «ОТКАЗАНО»):]* «Цифровые они, видите ли! Ничего... Раз нельзя украсть деньги у дома, я избавлюсь от жениха!»
+  * `0:40–0:45`: *[Закадровый голос (быстро и интригующе):]* «В следующей серии: Романтическая ванна с пеной и триста восемьдесят вольт! Подпишись, чтобы не пропустить!»
+
+---
+
+## 14. СЕРИЯ 20: «ВАННА С ПЕНОЙ И 380 ВОЛЬТ»
+
+* **Технический формат:** Генерация в **Omni Flash 1.2** (3 непрерывные сцены по **15 секунд** = 45 секунд суммарно).
+* **Вирусный контекст:** Акт II (Первое покушение Дебби). Экстремальный комедийный контрапункт: коварный замысел Дебби против блаженного восторга неуязвимого Фестера.
+* **Философия Zero Direct Ads:** Культура современной электробезопасности дома без навязчивой рекламы: при броске кабеля молниеносно срабатывает УЗО в щитке подъезда, спасая электросеть дома от аварии, а зрителю ненавязчиво демонстрируется надежность автоматики дома.
+* **Обложка (9:16):** `cover_ep20_bathtub_voltage.jpg` (Текст: `20 СЕРИЯ / ВАННА И 380 ВОЛЬТ!`).
+
+### 📜 Сценарий и 15-секундные 4K-промпты (Omni Flash 1.2)
+
+**Сцена 1 (0:00–0:15) — Романтическая ловушка (15 сек)**
+```text
+Vertical 9:16 video. Clean modern digital cinematography, sharp 4k, no film grain. A moody atmospheric retro bathroom decorated with dark candles and spiderwebs. A vintage clawfoot cast-iron bathtub is filled to the brim with fluffy white soap foam. Inside the bath, pale bald @Fester hums a cheerful tune, splashing water and playing with a funny black rubber bat. At 5 seconds, glamorous blonde @Debbie in a luxurious silk robe enters the room, smiling with sweet deceit. Hidden behind her back, she firmly clutches a thick black electrical cable with bare copper wires. At 10 seconds, @Debbie gracefully approaches the bathtub, softly touches @Fester's shoulder, and slowly hovers the dangerous cable right above the foaming water.
+```
+* **Тайминг озвучки [Voiceover & Sound FX]:**
+  * `0:00–0:05`: *[Звук: Плеск воды, шлепки мыльной пены, писк резиновой мыши. Фестер тихо напевает вальс.]*
+  * `0:05–0:10`: *[Дебби (медовым, ласковым шепотом):]* «Фестер, дорогой... Я приготовила для тебя особенный спа-сюрприз! Ты ведь любишь бодрящие ощущения?»
+  * `0:10–0:15`: *[Фестер (сияет от умиления, глядя на неё влюбленными глазами):]* «Обожаю сюрпризы, моя ласточка! От одного твоего взгляда у меня мурашки по черепу!»
+
+---
+
+**Сцена 2 (0:15–0:30) — Разряд 380V и спа-эффект (15 сек)**
+```text
+Vertical 9:16 video. Cinematic dramatic action. Clean digital cinematography, 4k. At 0 seconds, @Debbie with a cruel, triumphant smirk suddenly drops the thick high-voltage cable straight into the foaming bathtub! A sudden spectacular burst of harmless bright festive electrical sparks and golden glowing arcs illuminates the dark room. At 5 seconds, the overhead room lights violently flicker and go completely dark, accompanied by theatrical white harmless smoke drifting over the water. At 10 seconds, as the smoke clears, @Fester sits upright in the bubbly water, beaming with sheer heavenly euphoria. His pale skin warmly glows, and the incandescent lightbulb in his mouth bursts into brilliant golden light. He exhales in blissful ecstasy.
+```
+* **Тайминг озвучки [Voiceover & Sound FX]:**
+  * `0:15–0:20`: *[Звук: ТР-Р-Р-ХРЯСЬ! Мощный треск электрических искр! Свет с хлопком гаснет. Дебби (хохочет):]* «Прощай, наивный наследник тридцати миллионов!»
+  * `0:20–0:25`: *[Звук: Глубокий блаженный выдох и бульканье пены. Дым рассеивается. Закадровый голос:]* «Но для Фестера высокое напряжение — это просто утренний кофе...»
+  * `0:25–0:30`: *[Фестер (в экстазе пускает искры с кончиков пальцев):]* «М-м-м! Божественно! Три фазы, триста восемьдесят вольт! Лучший гидромассаж в жизни! Спину отпустило!»
+
+---
+
+**Сцена 3 (0:30–0:45) — Автоматика сработала и клиффхэнгер (15 сек)**
+```text
+Vertical 9:16 video. Dynamic slapstick comedy. At 0 seconds, a quick cut to a modern hallway electrical distribution panel with a digital display glowing green: 'УЗО СРАБОТАЛО ЗА 0.02 СЕКУНДЫ. СЕТЬ В БЕЗОПАСНОСТИ'. At 5 seconds, back in the bathroom, @Debbie stands completely frozen in absolute horror and shock, jaw dropped to the floor and mascara slightly smudged. @Fester happily splashes warm soap foam toward her, extending an inviting wet hand with tiny sparks dancing on his fingers. At 10 seconds, @Debbie frantically steps backward in pure panic into the dark corridor, clutching her robe. She glares into the camera with venomous frustration, shaking her trembling fist.
+```
+* **Тайминг озвучки [Voiceover & Sound FX]:**
+  * `0:30–0:35`: *[Звук: Четкий сухой щелчок автомата в щитке. Закадровый голос:]* «УЗО отсекает перегруз за сотые доли секунды. Дом в безопасности, а жених — на седьмом небе!»
+  * `0:35–0:40`: *[Фестер (радостно плещет пеной в Дебби):]* «Дебби, залезай скорее! Вода как парное молоко, и остаточный заряд такой бодрящий!»
+  * `0:40–0:45`: *[Дебби (в диком ужасе пятится спиной в темноту, шепчет в камеру):]* «Он... он бессмертный?! Ну погоди, на строительной люльке десятого этажа у тебя оборвется трос! Подпишись на @fixly_kz!»
+
+---
+
+## 15. СИНОПСИСЫ БУДУЩИХ СЕРИЙ 21–30
+
 * **Серия 21: «Романтика на крыше и сорванный трос»** — Дебби перерезает трос люльки на высоте 10 этажа. Фестер летит с криком восторга, пружинит на мешках со строймусором и взлетает обратно на балкон с цветами. Нативный контекст: закрытые чердаки, СКУД-замки.
 * **Серия 22: «Пикник во дворе и утечка газа»** — Дебби подстраивает хлопок старого баллона. Пламя опаляет только её укладку, а закопчённый Фестер кормит её стейком в форме черепа: *«С пылу с жару, как твоя любовь!»*. Нативный контекст: пожарная безопасность дома.
 * **Серия 23: «Лифт судного дня»** — Дебби отключает датчики ловителей в лифте. Кабина с грохотом летит в шахту. Дебби ждёт внизу с траурным венком, но из дверей выходит счастливый Фестер, крутя сальто: *«А жители жаловались, что лифт медленный!»*. Нативный контекст: журнал планового ТО лифтов.
@@ -340,7 +425,7 @@ Vertical 9:16 video. Dramatic close-up on Debbie's furious face, slightly smudge
 
 ---
 
-## 14. РЕЕСТР МЕДИА-АКТИВОВ И ОБЛОЖЕК
+## 16. РЕЕСТР МЕДИА-АКТИВОВ И ОБЛОЖЕК
 
 Все файлы автоматически синхронизируются в локальные рабочие папки:
 * 📁 `D:\загрузки\Обложки_Адамовы\`
@@ -361,7 +446,7 @@ Vertical 9:16 video. Dramatic close-up on Debbie's furious face, slightly smudge
 
 ---
 
-## 15. ПРОИЗВОДСТВЕННЫЙ РЕГЛАМЕНТ СОЗДАНИЯ СЕРИЙ (SOP)
+## 17. ПРОИЗВОДСТВЕННЫЙ РЕГЛАМЕНТ СОЗДАНИЯ СЕРИЙ (SOP)
 
 Для бесперебойного выпуска серий соблюдается строгий пошаговый цикл:
 

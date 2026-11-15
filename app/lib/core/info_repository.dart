@@ -10,10 +10,10 @@ class InfoItem {
   InfoItem({required this.id, required this.type, required this.title, required this.content});
 
   factory InfoItem.fromJson(Map<String, dynamic> json) => InfoItem(
-        id: json['id'] as String,
-        type: json['type'] as String,
-        title: json['title'] as String,
-        content: json['content'] as String,
+        id: ApiJson.asNonEmptyString(json['id']),
+        type: ApiJson.asString(json['type']),
+        title: ApiJson.asString(json['title']),
+        content: ApiJson.asString(json['content']),
       );
 }
 
@@ -32,7 +32,7 @@ class InfoRepository {
   final _api = ApiClient.instance;
 
   Future<List<InfoItem>> list() async {
-    final data = await _api.get('/api/info') as Map<String, dynamic>;
-    return (data['items'] as List).cast<Map<String, dynamic>>().map(InfoItem.fromJson).toList();
+    final data = ApiJson.asMap(await _api.get('/api/info'));
+    return ApiJson.asMapList(data['items']).map(InfoItem.fromJson).toList();
   }
 }

@@ -24,15 +24,15 @@ class OsiDocument {
   });
 
   factory OsiDocument.fromJson(Map<String, dynamic> json) => OsiDocument(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        description: json['description'] as String?,
-        category: json['category'] as String,
-        fileUrl: json['fileUrl'] as String,
-        fileSize: json['fileSize'] as int?,
-        fileType: json['fileType'] as String?,
-        isPublic: json['isPublic'] as bool? ?? true,
-        createdAt: DateTime.parse(json['createdAt'] as String),
+        id: ApiJson.asNonEmptyString(json['id']),
+        title: ApiJson.asString(json['title']),
+        description: ApiJson.asNullableString(json['description']),
+        category: ApiJson.asString(json['category']),
+        fileUrl: ApiJson.asNonEmptyString(json['fileUrl']),
+        fileSize: ApiJson.asNullableInt(json['fileSize']),
+        fileType: ApiJson.asNullableString(json['fileType']),
+        isPublic: ApiJson.asBool(json['isPublic'], defaultValue: true),
+        createdAt: ApiJson.asDateTime(json['createdAt']),
       );
 
   String get formattedDate {
@@ -61,9 +61,8 @@ class DocumentsRepository {
   final _api = ApiClient.instance;
 
   Future<List<OsiDocument>> fetchDocuments() async {
-    final data = await _api.get('/api/documents') as Map<String, dynamic>;
-    return ((data['documents'] as List?) ?? const [])
-        .cast<Map<String, dynamic>>()
+    final data = ApiJson.asMap(await _api.get('/api/documents'));
+    return ApiJson.asMapList(data['documents'])
         .map(OsiDocument.fromJson)
         .toList();
   }

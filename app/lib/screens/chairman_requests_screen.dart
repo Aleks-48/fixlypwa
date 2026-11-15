@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fixly_app/theme/app_theme.dart';
+import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/core/requests_repository.dart';
 import 'package:fixly_app/core/request_labels.dart';
 import 'package:fixly_app/core/events_repository.dart';
@@ -26,6 +27,8 @@ class _ChairmanRequestsScreenState extends State<ChairmanRequestsScreen> {
   String? _error;
   StreamSubscription<SseEvent>? _sub;
   Timer? _debounce;
+  final Set<String> _updatingIds = {};
+  int _loadSeq = 0;
 
   @override
   void initState() {
@@ -47,19 +50,20 @@ class _ChairmanRequestsScreenState extends State<ChairmanRequestsScreen> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final items = await RequestsRepository.instance.listBuilding();
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _items = items;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -68,15 +72,31 @@ class _ChairmanRequestsScreenState extends State<ChairmanRequestsScreen> {
   }
 
   Future<void> _advanceStatus(ServiceRequest r) async {
+    if (_updatingIds.contains(r.id)) return;
     final idx = _statusOrder.indexOf(r.status);
     if (idx < 0 || idx >= _statusOrder.length - 1) return; // уже RESOLVED
+    setState(() => _updatingIds.add(r.id));
     try {
       await RequestsRepository.instance.setStatus(r.id, _statusOrder[idx + 1]);
-      if (mounted) _load();
+      if (mounted) await _load();
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(e.message), backgroundColor: AppColors.of(context).danger),
+          );
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(e.toString()), backgroundColor: AppColors.of(context).danger),
+          );
       }
+    } finally {
+      if (mounted) setState(() => _updatingIds.remove(r.id));
     }
   }
 
@@ -96,23 +116,43 @@ class _ChairmanRequestsScreenState extends State<ChairmanRequestsScreen> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDimens.spaceLg),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
-                          const SizedBox(height: AppDimens.spaceMd),
-                          OutlinedButton(onPressed: _load, child: const Text('Повторить')),
-                        ],
+                ? LayoutBuilder(
+                    builder: (_, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppDimens.spaceLg),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
+                                const SizedBox(height: AppDimens.spaceMd),
+                                OutlinedButton(onPressed: _load, child: const Text('Повторить')),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   )
                 : _items.isEmpty
-                    ? Center(
-                        child: Text('Заявок пока нет',
-                            style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body)),
+                    ? LayoutBuilder(
+                        builder: (_, constraints) => SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: SizedBox(
+                            height: constraints.maxHeight,
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppDimens.spaceLg),
+                                child: Text('Заявок пока нет',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body)),
+                              ),
+                            ),
+                          ),
+                        ),
                       )
                     : ListView.separated(
                         padding: const EdgeInsets.all(AppDimens.spaceMd),
@@ -120,6 +160,7 @@ class _ChairmanRequestsScreenState extends State<ChairmanRequestsScreen> {
                         separatorBuilder: (_, __) => const SizedBox(height: AppDimens.spaceSm),
                         itemBuilder: (_, i) {
                           final r = _items[i];
+                          final isUpdating = _updatingIds.contains(r.id);
                           final color = r.status == 'RESOLVED'
                               ? c.success
                               : r.status == 'IN_PROGRESS'
@@ -170,10 +211,11 @@ class _ChairmanRequestsScreenState extends State<ChairmanRequestsScreen> {
                                           ],
                                         ),
                                       ),
+                                      const SizedBox(width: 8),
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                         decoration: BoxDecoration(
-                                          color: color.withOpacity(0.12),
+                                          color: color.withValues(alpha: 0.12),
                                           borderRadius: BorderRadius.circular(999),
                                         ),
                                         child: Text(
@@ -192,10 +234,12 @@ class _ChairmanRequestsScreenState extends State<ChairmanRequestsScreen> {
                                   Align(
                                     alignment: Alignment.centerRight,
                                     child: OutlinedButton(
-                                      onPressed: () => _advanceStatus(r),
+                                      onPressed: isUpdating ? null : () => _advanceStatus(r),
                                       style: OutlinedButton.styleFrom(side: BorderSide(color: c.primary)),
                                       child: Text(
-                                        r.status == 'RECEIVED' ? 'Взять в работу' : 'Отметить решённой',
+                                        isUpdating
+                                            ? 'Сохранение...'
+                                            : (r.status == 'RECEIVED' ? 'Взять в работу' : 'Отметить решённой'),
                                         style: TextStyle(color: c.primary),
                                       ),
                                     ),

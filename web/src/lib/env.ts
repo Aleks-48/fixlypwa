@@ -71,7 +71,10 @@ const schema = z.object({
   // вызова), 'groq' — MVP-дефолт (бесплатный тариф, §4.1), 'claude' — резерв (§4.2). Смена
   // провайдера НЕ снимает вопрос трансграничной передачи данных (Q-061/§6.3 спеки) — он
   // одинаково открыт для любого варианта.
-  LLM_PROVIDER: z.enum(["console", "groq", "claude"]).default("console"),
+  OLLAMA_URL: z.string().url().default("http://host.docker.internal:11434"),
+  OLLAMA_MODEL: z.string().default("qwen2.5:7b"),
+  OLLAMA_VISION_MODEL: z.string().default("gemma3:4b"),
+  LLM_PROVIDER: z.enum(["console", "groq", "claude", "ollama"]).default("console"),
   GROQ_API_KEY: z.string().optional(),
   // Актуальный список моделей меняется у Groq чаще, чем этот файл — дефолт можно переопределить
   // без деплоя кода. llama-3.3-70b-versatile — сильнее в tool use среди бесплатных на 2026-07.

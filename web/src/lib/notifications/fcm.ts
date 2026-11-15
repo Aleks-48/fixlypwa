@@ -77,6 +77,11 @@ export async function sendFcmToMany(entries: { userId: string; payload: PushPayl
     const payload = byUser.get(t.userId)!;
     return {
       token: t.token,
+      notification: {
+        title: "Fixly",
+        body: payload.type === "VIDEO_CALL" ? "Входящий видеозвонок" : "Новое уведомление",
+      },
+      apns: { payload: { aps: { sound: "default" } } },
       data: { type: payload.type, notificationId: payload.notificationId },
     };
   });

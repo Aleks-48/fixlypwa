@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fixly_app/theme/app_theme.dart';
+import 'package:fixly_app/core/api_client.dart';
 import 'package:fixly_app/core/requests_repository.dart';
 import 'package:fixly_app/core/request_labels.dart';
 import 'package:fixly_app/core/events_repository.dart';
@@ -20,6 +21,8 @@ class _RequestsScreenState extends State<RequestsScreen> {
   List<ServiceRequest> _items = [];
   bool _loading = true;
   String? _error;
+  int _loadSeq = 0;
+  bool _navigating = false;
   StreamSubscription<SseEvent>? _sub;
   Timer? _debounce;
 
@@ -43,32 +46,56 @@ class _RequestsScreenState extends State<RequestsScreen> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final items = await RequestsRepository.instance.listMine();
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _items = items;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
-        _error = e.toString();
+        _error = e is ApiException ? e.message : e.toString();
         _loading = false;
       });
     }
   }
 
   Future<void> _createNew() async {
-    final id = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(builder: (_) => const CreateRequestScreen()),
-    );
-    if (id != null && mounted) _load();
+    if (_navigating) return;
+    _navigating = true;
+    try {
+      final id = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (_) => const CreateRequestScreen()),
+      );
+      if (id != null && mounted) _load();
+    } finally {
+      _navigating = false;
+    }
+  }
+
+  Future<void> _openThread(String requestId) async {
+    if (_navigating) return;
+    _navigating = true;
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RequestThreadScreen(requestId: requestId),
+        ),
+      );
+      if (mounted) _load();
+    } finally {
+      _navigating = false;
+    }
   }
 
   @override
@@ -93,31 +120,48 @@ class _RequestsScreenState extends State<RequestsScreen> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDimens.spaceLg),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
-                          const SizedBox(height: AppDimens.spaceMd),
-                          OutlinedButton(onPressed: _load, child: const Text('Повторить')),
-                        ],
+                ? LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppDimens.spaceLg),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
+                                const SizedBox(height: AppDimens.spaceMd),
+                                OutlinedButton(onPressed: _load, child: const Text('Повторить')),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   )
                 : _items.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppDimens.spaceLg),
-                          child: Text(
-                            'Заявок пока нет — нажмите «+», чтобы создать первую',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body),
+                    ? LayoutBuilder(
+                        builder: (context, constraints) => SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppDimens.spaceLg),
+                                child: Text(
+                                  'Заявок пока нет — нажмите «+», чтобы создать первую',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       )
                     : ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(
                             AppDimens.spaceMd, AppDimens.spaceMd, AppDimens.spaceMd, 80),
                         itemCount: _items.length,
@@ -130,15 +174,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
                                   ? c.warning
                                   : c.textTertiary;
                           return InkWell(
-                            onTap: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => RequestThreadScreen(requestId: r.id),
-                                ),
-                              );
-                              if (mounted) _load();
-                            },
+                            onTap: () => _openThread(r.id),
                             borderRadius: BorderRadius.circular(AppDimens.radiusMd),
                             child: Container(
                               padding: const EdgeInsets.all(AppDimens.spaceMd),
@@ -172,10 +208,11 @@ class _RequestsScreenState extends State<RequestsScreen> {
                                       ],
                                     ),
                                   ),
+                                  const SizedBox(width: AppDimens.spaceSm),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                     decoration: BoxDecoration(
-                                      color: color.withOpacity(0.12),
+                                      color: color.withValues(alpha: 0.12),
                                       borderRadius: BorderRadius.circular(999),
                                     ),
                                     child: Text(

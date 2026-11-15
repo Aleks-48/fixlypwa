@@ -12,9 +12,9 @@ class PollOption {
   PollOption({required this.id, required this.label, required this.votes});
 
   factory PollOption.fromJson(Map<String, dynamic> json) => PollOption(
-        id: (json['id'] as String?) ?? '',
-        label: (json['label'] as String?) ?? '',
-        votes: (json['votes'] as num?)?.toInt() ?? 0,
+        id: ApiJson.asNonEmptyString(json['id']),
+        label: ApiJson.asString(json['label']),
+        votes: ApiJson.asInt(json['votes'], defaultValue: 0),
       );
 }
 
@@ -40,16 +40,13 @@ class Poll {
   bool get voted => myOptionId != null;
 
   factory Poll.fromJson(Map<String, dynamic> json) => Poll(
-        id: (json['id'] as String?) ?? '',
-        question: (json['question'] as String?) ?? '',
-        deadline: json['deadline'] != null 
-            ? DateTime.tryParse(json['deadline'].toString()) 
-            : null,
-        closed: (json['closed'] as bool?) ?? false,
-        totalVotes: (json['totalVotes'] as num?)?.toInt() ?? 0,
-        myOptionId: json['myOptionId'] as String?,
-        options: ((json['options'] as List?) ?? const [])
-            .whereType<Map<String, dynamic>>()
+        id: ApiJson.asNonEmptyString(json['id']),
+        question: ApiJson.asString(json['question']),
+        deadline: ApiJson.asNullableDateTime(json['deadline']),
+        closed: ApiJson.asBool(json['closed'], defaultValue: false),
+        totalVotes: ApiJson.asInt(json['totalVotes'], defaultValue: 0),
+        myOptionId: ApiJson.asNullableString(json['myOptionId']),
+        options: ApiJson.asMapList(json['options'])
             .map(PollOption.fromJson)
             .toList(),
       );
@@ -64,14 +61,11 @@ class PollsRepository {
   // buildingId обязателен для председателя (у него нет Occupant, сервер не сможет вывести
   // дом сам); житель может не передавать — сервер найдёт дом через его квартиру.
   Future<List<Poll>> list({String? buildingId}) async {
-    final path = buildingId != null ? '/api/polls?buildingId=$buildingId' : '/api/polls';
-    final rawData = await _api.get(path);
-    final data = rawData is Map<String, dynamic> ? rawData : <String, dynamic>{};
-    
-    return ((data['polls'] as List?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(Poll.fromJson)
-        .toList();
+    final path = buildingId != null
+        ? '/api/polls?buildingId=${Uri.encodeQueryComponent(buildingId)}'
+        : '/api/polls';
+    final data = ApiJson.asMap(await _api.get(path));
+    return ApiJson.asMapList(data['polls']).map(Poll.fromJson).toList();
   }
 
   // 1 голос на пользователя на ОПРОС (не на вариант) — повторный вызов переголосует.

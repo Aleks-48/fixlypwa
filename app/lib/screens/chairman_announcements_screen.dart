@@ -23,6 +23,9 @@ class _ChairmanAnnouncementsScreenState
   String? _buildingId;
   bool _loading = true;
   String? _error;
+  int _loadSeq = 0;
+  final Set<String> _deletingIds = {};
+  bool _openingCreate = false;
 
   @override
   void initState() {
@@ -31,21 +34,23 @@ class _ChairmanAnnouncementsScreenState
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final buildings = await OsiRepository.instance.listBuildings();
-      final items = await AnnouncementsRepository.instance.list();
-      if (!mounted) return;
+      final buildingId = buildings.isNotEmpty ? buildings.first.id : null;
+      final items = await AnnouncementsRepository.instance.list(buildingId: buildingId);
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
-        _buildingId = buildings.isNotEmpty ? buildings.first.id : null;
+        _buildingId = buildingId;
         _items = items;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -54,26 +59,34 @@ class _ChairmanAnnouncementsScreenState
   }
 
   Future<void> _openCreate() async {
+    if (_loading || _openingCreate) return;
     if (_buildingId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Сначала добавьте дом')),
       );
       return;
     }
-    final created = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.of(context).card,
-      shape: const RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
-      ),
-      builder: (_) => _CreateAnnouncementSheet(buildingId: _buildingId!),
-    );
+    _openingCreate = true;
+    bool? created;
+    try {
+      created = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.of(context).card,
+        shape: const RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
+        ),
+        builder: (_) => _CreateAnnouncementSheet(buildingId: _buildingId!),
+      );
+    } finally {
+      _openingCreate = false;
+    }
     if (created == true && mounted) _load();
   }
 
   Future<void> _deleteAnnouncement(String id) async {
+    if (_deletingIds.contains(id)) return;
     final c = AppColors.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
@@ -98,20 +111,28 @@ class _ChairmanAnnouncementsScreenState
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted || _deletingIds.contains(id)) return;
 
+    setState(() => _deletingIds.add(id));
     try {
       await AnnouncementsRepository.instance.delete(id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Объявление удалено')),
       );
-      _load();
+      await _load();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: AppColors.of(context).danger),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка удаления: $e')),
+        SnackBar(content: Text('Ошибка удаления: $e'), backgroundColor: AppColors.of(context).danger),
       );
+    } finally {
+      if (mounted) setState(() => _deletingIds.remove(id));
     }
   }
 
@@ -156,8 +177,20 @@ class _ChairmanAnnouncementsScreenState
               onTap: () async {
                 Navigator.pop(ctx);
                 final uri = Uri.parse('https://api.whatsapp.com/send?text=$text');
-                if (await canLaunchUrl(uri)) {
-                  launchUrl(uri, mode: LaunchMode.externalApplication);
+                try {
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  } else if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Не удалось открыть WhatsApp')),
+                    );
+                  }
+                } catch (_) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Не удалось открыть WhatsApp')),
+                    );
+                  }
                 }
               },
             ),
@@ -167,8 +200,20 @@ class _ChairmanAnnouncementsScreenState
               onTap: () async {
                 Navigator.pop(ctx);
                 final uri = Uri.parse('https://t.me/share/url?url=&text=$text');
-                if (await canLaunchUrl(uri)) {
-                  launchUrl(uri, mode: LaunchMode.externalApplication);
+                try {
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  } else if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Не удалось открыть Telegram')),
+                    );
+                  }
+                } catch (_) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Не удалось открыть Telegram')),
+                    );
+                  }
                 }
               },
             ),
@@ -210,31 +255,47 @@ class _ChairmanAnnouncementsScreenState
         child: _loading
             ? Center(child: CircularProgressIndicator(color: c.primary))
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDimens.spaceLg),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!,
-                              style: TextStyle(color: c.danger),
-                              textAlign: TextAlign.center),
-                          const SizedBox(height: AppDimens.spaceMd),
-                          OutlinedButton(
-                              onPressed: _load,
-                              child: const Text('Повторить')),
-                        ],
+                ? LayoutBuilder(
+                    builder: (_, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppDimens.spaceLg),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!,
+                                    style: TextStyle(color: c.danger),
+                                    textAlign: TextAlign.center),
+                                const SizedBox(height: AppDimens.spaceMd),
+                                OutlinedButton(
+                                    onPressed: _load,
+                                    child: const Text('Повторить')),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   )
                 : sortedItems.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppDimens.spaceLg),
-                          child: Text(
-                            'Объявлений пока нет — нажмите «+», чтобы опубликовать первое',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: c.textTertiary),
+                    ? LayoutBuilder(
+                        builder: (_, constraints) => SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: SizedBox(
+                            height: constraints.maxHeight,
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppDimens.spaceLg),
+                                child: Text(
+                                  'Объявлений пока нет — нажмите «+», чтобы опубликовать первое',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: c.textTertiary),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       )
@@ -258,7 +319,7 @@ class _ChairmanAnnouncementsScreenState
                                   BorderRadius.circular(AppDimens.radiusMd),
                               border: Border.all(
                                 color: a.isPinned
-                                    ? c.secondary.withOpacity(0.5)
+                                    ? c.secondary.withValues(alpha: 0.5)
                                     : c.cardBorder,
                               ),
                             ),
@@ -281,6 +342,7 @@ class _ChairmanAnnouncementsScreenState
                                         ),
                                       ),
                                     ),
+                                    const SizedBox(width: 6),
                                     Text(
                                       'прочитали: ${a.readCount}',
                                       style: TextStyle(
@@ -316,6 +378,7 @@ class _ChairmanAnnouncementsScreenState
                                         ),
                                         PopupMenuItem(
                                           value: 'delete',
+                                          enabled: !_deletingIds.contains(a.id),
                                           child: Row(
                                             children: [
                                               Icon(LucideIcons.trash2,
@@ -381,6 +444,7 @@ class _CreateAnnouncementSheetState extends State<_CreateAnnouncementSheet> {
   }
 
   Future<void> _submit() async {
+    if (_isLoading) return;
     if (_titleCtrl.text.trim().isEmpty || _bodyCtrl.text.trim().isEmpty) {
       setState(() => _error = 'Заполните заголовок и текст');
       return;
@@ -398,9 +462,9 @@ class _CreateAnnouncementSheetState extends State<_CreateAnnouncementSheet> {
       );
       if (mounted) Navigator.pop(context, true);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'Не удалось опубликовать');
+      if (mounted) setState(() => _error = 'Не удалось опубликовать');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -416,91 +480,93 @@ class _CreateAnnouncementSheetState extends State<_CreateAnnouncementSheet> {
         top: AppDimens.spaceLg,
         bottom: MediaQuery.of(context).viewInsets.bottom + AppDimens.spaceLg,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Новое объявление',
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 20,
-              fontWeight: AppTypography.bold,
-            ),
-          ),
-          const SizedBox(height: AppDimens.spaceMd),
-          TextField(
-            controller: _titleCtrl,
-            style: TextStyle(color: c.textPrimary),
-            decoration: InputDecoration(
-              hintText: 'Заголовок',
-              hintStyle: TextStyle(color: c.textTertiary),
-              filled: true,
-              fillColor: c.surfaceVariant,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                borderSide: BorderSide.none,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Новое объявление',
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 20,
+                fontWeight: AppTypography.bold,
               ),
             ),
-          ),
-          const SizedBox(height: AppDimens.spaceSm),
-          TextField(
-            controller: _bodyCtrl,
-            maxLines: 4,
-            style: TextStyle(color: c.textPrimary),
-            decoration: InputDecoration(
-              hintText: 'Текст объявления',
-              hintStyle: TextStyle(color: c.textTertiary),
-              filled: true,
-              fillColor: c.surfaceVariant,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-          const SizedBox(height: AppDimens.spaceSm),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: _isPinned,
-            onChanged: (v) => setState(() => _isPinned = v),
-            activeColor: c.primary,
-            title: Text('Закрепить', style: TextStyle(color: c.textPrimary)),
-          ),
-          if (_error != null) ...[
-            Text(_error!, style: TextStyle(color: c.danger)),
-            const SizedBox(height: AppDimens.spaceSm),
-          ],
-          SizedBox(
-            width: double.infinity,
-            height: AppDimens.primaryTapTarget,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _submit,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: c.primary,
-                shape: RoundedRectangleBorder(
+            const SizedBox(height: AppDimens.spaceMd),
+            TextField(
+              controller: _titleCtrl,
+              style: TextStyle(color: c.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Заголовок',
+                hintStyle: TextStyle(color: c.textTertiary),
+                filled: true,
+                fillColor: c.surfaceVariant,
+                border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                  borderSide: BorderSide.none,
                 ),
               ),
-              child: _isLoading
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    )
-                  : const Text(
-                      'Опубликовать',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: AppTypography.bold,
-                      ),
-                    ),
             ),
-          ),
-        ],
+            const SizedBox(height: AppDimens.spaceSm),
+            TextField(
+              controller: _bodyCtrl,
+              maxLines: 4,
+              style: TextStyle(color: c.textPrimary),
+              decoration: InputDecoration(
+                hintText: 'Текст объявления',
+                hintStyle: TextStyle(color: c.textTertiary),
+                filled: true,
+                fillColor: c.surfaceVariant,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppDimens.spaceSm),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _isPinned,
+              onChanged: _isLoading ? null : (v) => setState(() => _isPinned = v),
+              activeThumbColor: c.primary,
+              title: Text('Закрепить', style: TextStyle(color: c.textPrimary)),
+            ),
+            if (_error != null) ...[
+              Text(_error!, style: TextStyle(color: c.danger)),
+              const SizedBox(height: AppDimens.spaceSm),
+            ],
+            SizedBox(
+              width: double.infinity,
+              height: AppDimens.primaryTapTarget,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: c.primary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                  ),
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : const Text(
+                        'Опубликовать',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: AppTypography.bold,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

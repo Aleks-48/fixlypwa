@@ -1,0 +1,12 @@
+services:
+  telegram-local:
+    image: node:22-alpine
+    user: node
+    read_only: true
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?}
+    volumes:
+      - ./scripts/telegram-local.mjs:/opt/fixly/telegram-local.mjs:ro
+    command: ["node", "/opt/fixly/telegram-local.mjs"]

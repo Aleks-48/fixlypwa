@@ -1,4 +1,9 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:record/record.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import '../core/protected_files.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fixly_app/theme/app_theme.dart';
@@ -37,8 +42,44 @@ class _RequestThreadScreenState extends State<RequestThreadScreen> {
   String? _myUserId;
   final _msgCtrl = TextEditingController();
   bool _sending = false;
+  final _recorder = AudioRecorder();
+  bool _recording = false;
+  String? _audioPath;
+  String? _imagePath;
+  String? _uploadedImage;
+  String? _uploadedAudio;
+
+  Future<void> _attachPhoto() async {
+    try {
+      final photo = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, imageQuality: 85);
+      if (mounted && photo != null) setState(() { _imagePath = photo.path; _uploadedImage = null; });
+    } catch (_) { _notice('Не удалось выбрать фото'); }
+  }
+
+  void _notice(String message) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _toggleRecording() async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    try {
+      if (_recording) {
+        final path = await _recorder.stop();
+        if (mounted) setState(() { _audioPath = path; _uploadedAudio = null; _recording = false; });
+      } else if (await _recorder.hasPermission()) {
+        final dir = await getTemporaryDirectory();
+        if (!mounted) return;
+        await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc),
+            path: '${dir.path}/message-${DateTime.now().microsecondsSinceEpoch}.m4a');
+        if (mounted) setState(() => _recording = true);
+      } else { _notice('Разрешите доступ к микрофону для записи сообщения'); }
+    } catch (_) { _notice('Не удалось записать сообщение'); }
+    finally { if (mounted) setState(() => _sending = false); }
+  }
   StreamSubscription<SseEvent>? _sub;
   Timer? _debounce;
+  int _loadSeq = 0;
 
   @override
   void initState() {
@@ -56,47 +97,65 @@ class _RequestThreadScreenState extends State<RequestThreadScreen> {
   void dispose() {
     _debounce?.cancel();
     _sub?.cancel();
+    _recorder.dispose();
     _msgCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    final seq = ++_loadSeq;
+    if (!mounted) return;
+    if (_request == null) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    } else {
+      setState(() => _error = null);
+    }
     try {
       final results = await Future.wait([
         RequestsRepository.instance.get(widget.requestId),
         AuthRepository.instance.me(),
       ]);
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _request = results[0] as ServiceRequest;
         _myUserId = (results[1] as AuthUser?)?.id;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      if (!mounted || seq != _loadSeq) return;
+      final message = e is ApiException ? e.message : e.toString();
+      if (_request == null) {
+        setState(() {
+          _error = message;
+          _loading = false;
+        });
+      } else {
+        setState(() => _loading = false);
+        _notice(message);
+      }
     }
   }
 
   Future<void> _send() async {
     final text = _msgCtrl.text.trim();
-    if (text.isEmpty) return;
+    if (_sending || _recording || (text.isEmpty && _imagePath == null && _audioPath == null)) return;
     setState(() => _sending = true);
     try {
-      await RequestsRepository.instance.addMessage(widget.requestId, text);
+      if (_imagePath != null) _uploadedImage ??= await ApiClient.instance.uploadPhoto(_imagePath!);
+      if (_audioPath != null) _uploadedAudio ??= await ApiClient.instance.uploadAudio(File(_audioPath!));
+      await RequestsRepository.instance.addMessage(widget.requestId, text, imageUrl: _uploadedImage, audioUrl: _uploadedAudio);
+      if (!mounted) return;
+      _audioPath = _imagePath = _uploadedImage = _uploadedAudio = null;
       _msgCtrl.clear();
       await _load();
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
+    } catch (_) { _notice('Не удалось отправить сообщение');
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -123,7 +182,7 @@ class _RequestThreadScreenState extends State<RequestThreadScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(
-                  child: Padding(
+                  child: SingleChildScrollView(
                     padding: const EdgeInsets.all(AppDimens.spaceLg),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -152,6 +211,8 @@ class _RequestThreadScreenState extends State<RequestThreadScreen> {
                             child: Text(_request!.text, style: TextStyle(color: c.textPrimary)),
                           ),
                           const SizedBox(height: AppDimens.spaceMd),
+                          for (final url in _request!.photoUrls)
+                            ProtectedImage(url: url, placeholder: const Icon(Icons.broken_image)),
                           for (final m in _request!.messages)
                             _MessageBubble(
                               message: m,
@@ -161,7 +222,18 @@ class _RequestThreadScreenState extends State<RequestThreadScreen> {
                         ],
                       ),
                     ),
-                    _Composer(controller: _msgCtrl, sending: _sending, onSend: _send, colors: c),
+                    Wrap(children: [
+                      IconButton(tooltip: _recording ? 'Остановить запись' : 'Записать голосовое сообщение',
+                        onPressed: _sending ? null : _toggleRecording,
+                        icon: Icon(_recording ? Icons.stop_circle : Icons.mic)),
+                      IconButton(tooltip: 'Прикрепить фото', onPressed: _sending || _recording ? null : _attachPhoto,
+                        icon: const Icon(Icons.add_photo_alternate)),
+                      if (_audioPath != null) InputChip(label: const Text('Аудио'),
+                        onDeleted: _sending ? null : () => setState(() { _audioPath = _uploadedAudio = null; })),
+                      if (_imagePath != null) InputChip(label: const Text('Фото'),
+                        onDeleted: _sending ? null : () => setState(() { _imagePath = _uploadedImage = null; })),
+                    ]),
+                    _Composer(controller: _msgCtrl, sending: _sending || _recording, onSend: _send, colors: c),
                   ],
                 ),
     );
@@ -180,14 +252,17 @@ class _StatusBar extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: AppDimens.spaceMd, vertical: AppDimens.spaceSm),
-      color: color.withOpacity(0.1),
+      color: color.withValues(alpha: 0.1),
       child: Row(
         children: [
           Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           const SizedBox(width: 8),
-          Text(requestStatusLabels[request.status] ?? request.status,
-              style: TextStyle(color: color, fontWeight: AppTypography.semibold)),
-          const Spacer(),
+          Expanded(
+            child: Text(requestStatusLabels[request.status] ?? request.status,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: color, fontWeight: AppTypography.semibold)),
+          ),
+          const SizedBox(width: 8),
           Text(DateFormat('d MMMM', 'ru').format(request.createdAt.toLocal()),
               style: TextStyle(color: c.textTertiary, fontSize: AppTypography.caption)),
         ],
@@ -211,17 +286,21 @@ class _MessageBubbleState extends State<_MessageBubble> {
   bool _translating = false;
 
   Future<void> _translate() async {
+    if (_translating) return;
     if (_translatedText != null) {
       setState(() => _translatedText = null);
       return;
     }
     setState(() => _translating = true);
-    final translated = await AppLocalizations.translateUserContent(widget.message.text);
-    if (mounted) {
-      setState(() {
-        _translatedText = translated;
-        _translating = false;
-      });
+    try {
+      final translated = await AppLocalizations.translateUserContent(widget.message.text);
+      if (mounted) {
+        setState(() => _translatedText = translated);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _translating = false);
+      }
     }
   }
 
@@ -245,6 +324,20 @@ class _MessageBubbleState extends State<_MessageBubble> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (message.imageUrl != null)
+              ProtectedImage(url: message.imageUrl!, placeholder: const Icon(Icons.broken_image)),
+            if (message.audioUrl != null)
+              TextButton.icon(icon: const Icon(Icons.play_arrow), label: const Text('Аудиосообщение'),
+                onPressed: () async {
+                  try { await openProtectedFile(message.audioUrl!); }
+                  catch (_) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Не удалось открыть запись')),
+                      );
+                    }
+                  }
+                }),
             Text(textToShow, style: TextStyle(color: isMine ? Colors.white : c.textPrimary)),
             const SizedBox(height: 4),
             Row(
@@ -258,16 +351,19 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                InkWell(
-                  onTap: _translating ? null : _translate,
-                  child: Text(
-                    _translating
-                        ? '...'
-                        : (_translatedText != null ? '🌐 Показать оригинал' : '🌐 Перевести'),
-                    style: TextStyle(
-                      color: isMine ? Colors.white70 : c.primary,
-                      fontSize: 10,
-                      fontWeight: AppTypography.semibold,
+                Flexible(
+                  child: InkWell(
+                    onTap: _translating ? null : _translate,
+                    child: Text(
+                      _translating
+                          ? '...'
+                          : (_translatedText != null ? '🌐 Показать оригинал' : '🌐 Перевести'),
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isMine ? Colors.white70 : c.primary,
+                        fontSize: 10,
+                        fontWeight: AppTypography.semibold,
+                      ),
                     ),
                   ),
                 ),

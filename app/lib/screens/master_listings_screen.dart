@@ -20,6 +20,8 @@ class _MasterListingsScreenState extends State<MasterListingsScreen> {
   List<MarketListing> _listings = [];
   Map<String, MarketOffer> _myOfferByListingId = {};
   bool _loading = true;
+  bool _openingSheet = false;
+  int _loadSeq = 0;
   String? _error;
 
   StreamSubscription<SseEvent>? _sseSub;
@@ -45,10 +47,12 @@ class _MasterListingsScreenState extends State<MasterListingsScreen> {
   @override
   void dispose() {
     _sseSub?.cancel();
+    EventsRepository.instance.disconnect();
     super.dispose();
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
@@ -58,7 +62,7 @@ class _MasterListingsScreenState extends State<MasterListingsScreen> {
         MarketRepository.instance.listListings(),
         MarketRepository.instance.listMyOffers(),
       ]);
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       final offers = results[1] as List<MarketOffer>;
       setState(() {
         _listings = results[0] as List<MarketListing>;
@@ -66,7 +70,7 @@ class _MasterListingsScreenState extends State<MasterListingsScreen> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -75,16 +79,23 @@ class _MasterListingsScreenState extends State<MasterListingsScreen> {
   }
 
   Future<void> _respond(MarketListing listing) async {
-    final sent = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.of(context).card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
-      ),
-      builder: (_) => _RespondSheet(listing: listing),
-    );
-    if (sent == true && mounted) _load();
+    if (_openingSheet) return;
+    _openingSheet = true;
+    try {
+      final sent = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.of(context).card,
+        shape: const RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
+        ),
+        builder: (_) => _RespondSheet(listing: listing),
+      );
+      if (sent == true && mounted) _load();
+    } finally {
+      _openingSheet = false;
+    }
   }
 
   @override
@@ -103,27 +114,51 @@ class _MasterListingsScreenState extends State<MasterListingsScreen> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDimens.spaceLg),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
-                          const SizedBox(height: AppDimens.spaceMd),
-                          OutlinedButton(onPressed: _load, child: const Text('Повторить')),
-                        ],
+                ? LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints:
+                            BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppDimens.spaceLg),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!,
+                                    style: TextStyle(color: c.danger),
+                                    textAlign: TextAlign.center),
+                                const SizedBox(height: AppDimens.spaceMd),
+                                OutlinedButton(
+                                    onPressed: _load,
+                                    child: const Text('Повторить')),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   )
                 : _listings.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppDimens.spaceLg),
-                          child: Text(
-                            'Пока нет заказов в вашем городе — загляните позже',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body),
+                    ? LayoutBuilder(
+                        builder: (context, constraints) => SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: ConstrainedBox(
+                            constraints:
+                                BoxConstraints(minHeight: constraints.maxHeight),
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppDimens.spaceLg),
+                                child: Text(
+                                  'Пока нет заказов в вашем городе — загляните позже',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      color: c.textTertiary,
+                                      fontSize: AppTypography.body),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       )
@@ -207,6 +242,7 @@ class _RespondSheetState extends State<_RespondSheet> {
   }
 
   Future<void> _submit() async {
+    if (_sending) return;
     final message = _msgCtrl.text.trim();
     if (message.isEmpty) {
       setState(() => _error = 'Напишите сообщение');
@@ -229,7 +265,9 @@ class _RespondSheetState extends State<_RespondSheet> {
       await MarketRepository.instance.respond(widget.listing.id, message: message, price: price);
       if (mounted) Navigator.pop(context, true);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Не удалось отправить отклик');
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -245,10 +283,11 @@ class _RespondSheetState extends State<_RespondSheet> {
         top: AppDimens.spaceLg,
         bottom: MediaQuery.of(context).viewInsets.bottom + AppDimens.spaceLg,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Text(widget.listing.title,
               style: TextStyle(color: c.textPrimary, fontSize: 18, fontWeight: AppTypography.bold)),
           const SizedBox(height: AppDimens.spaceMd),
@@ -301,6 +340,7 @@ class _RespondSheetState extends State<_RespondSheet> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

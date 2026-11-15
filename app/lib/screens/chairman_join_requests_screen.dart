@@ -16,6 +16,7 @@ class _ChairmanJoinRequestsScreenState extends State<ChairmanJoinRequestsScreen>
   bool _loading = true;
   String? _error;
   final Set<String> _processingIds = {};
+  int _loadSeq = 0;
 
   @override
   void initState() {
@@ -24,19 +25,20 @@ class _ChairmanJoinRequestsScreenState extends State<ChairmanJoinRequestsScreen>
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final requests = await OsiRepository.instance.listOsiJoinRequests();
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _requests = requests;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -45,31 +47,41 @@ class _ChairmanJoinRequestsScreenState extends State<ChairmanJoinRequestsScreen>
   }
 
   Future<void> _resolveRequest(PendingJoinRequest req) async {
+    if (_processingIds.contains(req.id)) return;
     setState(() => _processingIds.add(req.id));
     try {
       await OsiRepository.instance.resolveJoinRequest(req.id);
       if (!mounted) return;
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Заявка от ${req.fullName ?? "пользователя"} одобрена'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('Заявка от ${req.fullName ?? "пользователя"} одобрена'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
       setState(() {
         _requests.removeWhere((item) => item.id == req.id);
       });
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message), backgroundColor: AppColors.of(context).danger),
-      );
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.of(context).danger),
+        );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Не удалось обработать заявку')),
-      );
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('Не удалось обработать заявку'),
+            backgroundColor: AppColors.of(context).danger,
+          ),
+        );
     } finally {
       if (mounted) {
         setState(() => _processingIds.remove(req.id));
@@ -94,34 +106,50 @@ class _ChairmanJoinRequestsScreenState extends State<ChairmanJoinRequestsScreen>
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDimens.spaceLg),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
-                          const SizedBox(height: AppDimens.spaceMd),
-                          OutlinedButton(onPressed: _load, child: const Text('Повторить')),
-                        ],
+                ? LayoutBuilder(
+                    builder: (_, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppDimens.spaceLg),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_error!, style: TextStyle(color: c.danger), textAlign: TextAlign.center),
+                                const SizedBox(height: AppDimens.spaceMd),
+                                OutlinedButton(onPressed: _load, child: const Text('Повторить')),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   )
                 : _requests.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppDimens.spaceLg),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(LucideIcons.userCheck, size: 48, color: c.textTertiary),
-                              const SizedBox(height: AppDimens.spaceMd),
-                              Text(
-                                'Новых заявок на присоединение нет',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body),
+                    ? LayoutBuilder(
+                        builder: (_, constraints) => SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppDimens.spaceLg),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(LucideIcons.userCheck, size: 48, color: c.textTertiary),
+                                    const SizedBox(height: AppDimens.spaceMd),
+                                    Text(
+                                      'Новых заявок на присоединение нет',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(color: c.textTertiary, fontSize: AppTypography.body),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       )
@@ -146,7 +174,7 @@ class _ChairmanJoinRequestsScreenState extends State<ChairmanJoinRequestsScreen>
                                 Row(
                                   children: [
                                     CircleAvatar(
-                                      backgroundColor: c.primary.withOpacity(0.1),
+                                      backgroundColor: c.primary.withValues(alpha: 0.1),
                                       child: Icon(LucideIcons.user, color: c.primary, size: 20),
                                     ),
                                     const SizedBox(width: AppDimens.spaceSm),

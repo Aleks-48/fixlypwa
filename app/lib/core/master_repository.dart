@@ -1,5 +1,37 @@
 import 'api_client.dart';
 
+String _asString(dynamic value, [String fallback = '']) =>
+    value?.toString() ?? fallback;
+
+List<String> _asStringList(dynamic value) {
+  if (value is! List) return const [];
+  return value.where((e) => e != null).map((e) => e.toString()).toList();
+}
+
+double? _asDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
+}
+
+int? _asInt(dynamic value) {
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
+Map<String, dynamic> _requireMap(dynamic data, [String? nestedKey]) {
+  if (data is! Map) {
+    throw ApiException('BAD_RESPONSE', 'Некорректный ответ сервера', 500);
+  }
+  if (nestedKey == null) return Map<String, dynamic>.from(data);
+  final nested = data[nestedKey];
+  if (nested is! Map) {
+    throw ApiException('BAD_RESPONSE', 'Некорректный ответ сервера', 500);
+  }
+  return Map<String, dynamic>.from(nested);
+}
+
 // =============================================================================
 //  МОДЕЛИ
 // =============================================================================
@@ -11,7 +43,10 @@ class MasterApplication {
   MasterApplication({required this.id, required this.status});
 
   factory MasterApplication.fromJson(Map<String, dynamic> json) =>
-      MasterApplication(id: json['id'] as String, status: json['status'] as String);
+      MasterApplication(
+        id: _asString(json['id']),
+        status: _asString(json['status'], 'PENDING'),
+      );
 }
 
 /// Профиль мастера (текущего пользователя).
@@ -33,12 +68,12 @@ class MasterProfile {
   });
 
   factory MasterProfile.fromJson(Map<String, dynamic> json) => MasterProfile(
-        id: json['id'] as String,
-        status: json['status'] as String,
-        city: json['city'] as String,
-        categories: ((json['categories'] as List?) ?? const []).cast<String>(),
-        fullName: json['fullName'] as String,
-        bio: json['bio'] as String?,
+        id: _asString(json['id']),
+        status: _asString(json['status'], 'PENDING'),
+        city: _asString(json['city']),
+        categories: _asStringList(json['categories']),
+        fullName: _asString(json['fullName']),
+        bio: json['bio']?.toString(),
       );
 }
 
@@ -70,19 +105,22 @@ class PublicMaster {
     this.lng,
   });
 
-  factory PublicMaster.fromJson(Map<String, dynamic> json) => PublicMaster(
-        id: json['id'] as String,
-        fullName: json['fullName'] as String,
-        shortName: (json['shortName'] as String?) ?? (json['fullName'] as String),
-        city: json['city'] as String,
-        categories: ((json['categories'] as List?) ?? const []).cast<String>(),
-        bio: json['bio'] as String?,
-        phone: json['phone'] as String?,
-        rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
-        reviewsCount: (json['reviewsCount'] as int?) ?? 0,
-        lat: (json['lat'] as num?)?.toDouble(),
-        lng: (json['lng'] as num?)?.toDouble(),
-      );
+  factory PublicMaster.fromJson(Map<String, dynamic> json) {
+    final fullName = _asString(json['fullName']);
+    return PublicMaster(
+      id: _asString(json['id']),
+      fullName: fullName,
+      shortName: json['shortName']?.toString() ?? fullName,
+      city: _asString(json['city']),
+      categories: _asStringList(json['categories']),
+      bio: json['bio']?.toString(),
+      phone: json['phone']?.toString(),
+      rating: _asDouble(json['rating']) ?? 0.0,
+      reviewsCount: _asInt(json['reviewsCount']) ?? 0,
+      lat: _asDouble(json['lat']),
+      lng: _asDouble(json['lng']),
+    );
+  }
 }
 
 /// Портфолио-работа мастера.
@@ -103,11 +141,11 @@ class MasterPortfolioItem {
 
   factory MasterPortfolioItem.fromJson(Map<String, dynamic> json) =>
       MasterPortfolioItem(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        description: json['description'] as String?,
-        category: json['category'] as String,
-        photoUrls: ((json['photoUrls'] as List?) ?? const []).cast<String>(),
+        id: _asString(json['id']),
+        title: _asString(json['title']),
+        description: json['description']?.toString(),
+        category: _asString(json['category'], 'OTHER'),
+        photoUrls: _asStringList(json['photoUrls']),
       );
 }
 
@@ -127,12 +165,14 @@ class MasterReviewItem {
     this.authorPhone,
   });
 
-  factory MasterReviewItem.fromJson(Map<String, dynamic> json) => MasterReviewItem(
-        id: json['id'] as String,
-        rating: json['rating'] as int,
-        comment: json['comment'] as String?,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        authorPhone: json['authorPhone'] as String?,
+  factory MasterReviewItem.fromJson(Map<String, dynamic> json) =>
+      MasterReviewItem(
+        id: _asString(json['id']),
+        rating: _asInt(json['rating']) ?? 0,
+        comment: json['comment']?.toString(),
+        createdAt: DateTime.tryParse(_asString(json['createdAt'])) ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+        authorPhone: json['authorPhone']?.toString(),
       );
 }
 
@@ -152,31 +192,44 @@ class MasterDetail extends PublicMaster {
     super.phone,
     required super.rating,
     required super.reviewsCount,
+    super.lat,
+    super.lng,
     required this.portfolio,
     required this.reviews,
     this.offersCount = 0,
   });
 
-  factory MasterDetail.fromJson(Map<String, dynamic> json) => MasterDetail(
-        id: json['id'] as String,
-        fullName: json['fullName'] as String,
-        shortName: (json['shortName'] as String?) ?? (json['fullName'] as String),
-        city: json['city'] as String,
-        categories: ((json['categories'] as List?) ?? const []).cast<String>(),
-        bio: json['bio'] as String?,
-        phone: json['phone'] as String?,
-        rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
-        reviewsCount: (json['reviewsCount'] as int?) ?? 0,
-        offersCount: (json['offersCount'] as int?) ?? 0,
-        portfolio: ((json['portfolio'] as List?) ?? const [])
-            .cast<Map<String, dynamic>>()
-            .map(MasterPortfolioItem.fromJson)
-            .toList(),
-        reviews: ((json['reviews'] as List?) ?? const [])
-            .cast<Map<String, dynamic>>()
-            .map(MasterReviewItem.fromJson)
-            .toList(),
-      );
+  factory MasterDetail.fromJson(Map<String, dynamic> json) {
+    final fullName = _asString(json['fullName']);
+    final rawPortfolio = json['portfolio'];
+    final rawReviews = json['reviews'];
+    return MasterDetail(
+      id: _asString(json['id']),
+      fullName: fullName,
+      shortName: json['shortName']?.toString() ?? fullName,
+      city: _asString(json['city']),
+      categories: _asStringList(json['categories']),
+      bio: json['bio']?.toString(),
+      phone: json['phone']?.toString(),
+      rating: _asDouble(json['rating']) ?? 0.0,
+      reviewsCount: _asInt(json['reviewsCount']) ?? 0,
+      lat: _asDouble(json['lat']),
+      lng: _asDouble(json['lng']),
+      offersCount: _asInt(json['offersCount']) ?? 0,
+      portfolio: rawPortfolio is List
+          ? rawPortfolio
+              .whereType<Map>()
+              .map((e) => MasterPortfolioItem.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+          : const [],
+      reviews: rawReviews is List
+          ? rawReviews
+              .whereType<Map>()
+              .map((e) => MasterReviewItem.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+          : const [],
+    );
+  }
 }
 
 // =============================================================================
@@ -201,15 +254,19 @@ class MasterRepository {
       'city': city,
       'categories': categories,
       if (bio != null && bio.trim().isNotEmpty) 'bio': bio.trim(),
-    }) as Map<String, dynamic>;
-    return MasterApplication.fromJson(data['master'] as Map<String, dynamic>);
+    });
+    return MasterApplication.fromJson(_requireMap(data, 'master'));
   }
 
   /// Статус анкеты текущего мастера — null если анкеты нет.
   Future<MasterProfile?> me() async {
-    final data = await _api.get('/api/master/me') as Map<String, dynamic>;
-    final master = data['master'] as Map<String, dynamic>?;
-    return master == null ? null : MasterProfile.fromJson(master);
+    final data = _requireMap(await _api.get('/api/master/me'));
+    final master = data['master'];
+    if (master == null) return null;
+    if (master is! Map) {
+      throw ApiException('BAD_RESPONSE', 'Некорректный ответ сервера', 500);
+    }
+    return MasterProfile.fromJson(Map<String, dynamic>.from(master));
   }
 
   /// Обновление анкетных данных мастера в базе (био, город, категории)
@@ -222,15 +279,19 @@ class MasterRepository {
       if (city != null) 'city': city,
       if (bio != null) 'bio': bio,
       if (categories != null) 'categories': categories,
-    }) as Map<String, dynamic>;
-    return MasterProfile.fromJson(data['master'] as Map<String, dynamic>);
+    });
+    return MasterProfile.fromJson(_requireMap(data, 'master'));
   }
 
   /// Детальная информация собственного профиля мастера (с реальной статистикой, портфолио и отзывами)
   Future<MasterDetail?> myDetails() async {
-    final data = await _api.get('/api/master/me/details') as Map<String, dynamic>;
-    final master = data['master'] as Map<String, dynamic>?;
-    return master == null ? null : MasterDetail.fromJson(master);
+    final data = _requireMap(await _api.get('/api/master/me/details'));
+    final master = data['master'];
+    if (master == null) return null;
+    if (master is! Map) {
+      throw ApiException('BAD_RESPONSE', 'Некорректный ответ сервера', 500);
+    }
+    return MasterDetail.fromJson(Map<String, dynamic>.from(master));
   }
 
   /// Добавление работы в собственное портфолио
@@ -238,13 +299,15 @@ class MasterRepository {
     required String title,
     String? description,
     required String category,
+    List<String> photoUrls = const [],
   }) async {
     final data = await _api.post('/api/master/me/details', body: {
       'title': title,
+      'photoUrls': photoUrls,
       if (description != null && description.isNotEmpty) 'description': description,
       'category': category,
-    }) as Map<String, dynamic>;
-    return MasterPortfolioItem.fromJson(data['item'] as Map<String, dynamic>);
+    });
+    return MasterPortfolioItem.fromJson(_requireMap(data, 'item'));
   }
 
   /// Публичный список одобренных мастеров — для жителей.
@@ -256,17 +319,25 @@ class MasterRepository {
     if (category != null && category.isNotEmpty) {
       path += '&category=${Uri.encodeComponent(category)}';
     }
-    final data = await _api.get(path) as Map<String, dynamic>;
-    return ((data['masters'] as List?) ?? const [])
-        .cast<Map<String, dynamic>>()
-        .map(PublicMaster.fromJson)
-        .toList();
+    final data = _requireMap(await _api.get(path));
+    final raw = data['masters'];
+    if (raw is! List) {
+      throw ApiException('BAD_RESPONSE', 'Некорректный ответ сервера', 500);
+    }
+    final masters = <PublicMaster>[];
+    for (final item in raw) {
+      if (item is! Map) {
+        throw ApiException('BAD_RESPONSE', 'Некорректный ответ сервера', 500);
+      }
+      masters.add(PublicMaster.fromJson(Map<String, dynamic>.from(item)));
+    }
+    return masters;
   }
 
   /// Детальный профиль мастера с портфолио и отзывами.
   Future<MasterDetail> getMasterById(String masterId) async {
-    final data = await _api.get('/api/public/masters/$masterId') as Map<String, dynamic>;
-    return MasterDetail.fromJson(data['master'] as Map<String, dynamic>);
+    final data = await _api.get('/api/public/masters/${Uri.encodeComponent(masterId)}');
+    return MasterDetail.fromJson(_requireMap(data, 'master'));
   }
 }
 

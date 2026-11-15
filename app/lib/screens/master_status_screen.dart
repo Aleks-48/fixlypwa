@@ -8,23 +8,37 @@ import 'package:fixly_app/screens/login_page.dart';
 // master_application_screen.dart (сразу после отправки формы), но теперь достижим ПОВТОРНО
 // после перезапуска приложения: там это было состояние формы в памяти, здесь — перечитывается
 // через GET /api/master/me при каждом заходе HomeRouter'а.
-class MasterStatusScreen extends StatelessWidget {
+class MasterStatusScreen extends StatefulWidget {
   final MasterProfile master;
   const MasterStatusScreen({super.key, required this.master});
 
-  Future<void> _logout(BuildContext context) async {
-    await AuthRepository.instance.logout();
-    if (!context.mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (_) => false,
-    );
+  @override
+  State<MasterStatusScreen> createState() => _MasterStatusScreenState();
+}
+
+class _MasterStatusScreenState extends State<MasterStatusScreen> {
+  bool _loggingOut = false;
+
+  Future<void> _logout() async {
+    if (_loggingOut) return;
+    setState(() => _loggingOut = true);
+    try {
+      await AuthRepository.instance.logout();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (_) => false,
+      );
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final master = widget.master;
     final (icon, iconColor, title, message) = switch (master.status) {
       'REJECTED' => (
           Icons.report_gmailerrorred,
@@ -55,11 +69,14 @@ class MasterStatusScreen extends StatelessWidget {
         automaticallyImplyLeading: false,
         title: const Text('Мастер'),
         actions: [
-          IconButton(icon: Icon(Icons.logout, color: c.textPrimary), onPressed: () => _logout(context)),
+          IconButton(
+            icon: Icon(Icons.logout, color: c.textPrimary),
+            onPressed: _loggingOut ? null : _logout,
+          ),
         ],
       ),
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppDimens.spaceLg),
           child: Column(
             mainAxisSize: MainAxisSize.min,

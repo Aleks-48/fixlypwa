@@ -12,9 +12,9 @@ class BucketBalance {
   BucketBalance({required this.charged, required this.paid, required this.debt});
 
   factory BucketBalance.fromJson(Map<String, dynamic> json) => BucketBalance(
-        charged: (json['charged'] as num).toDouble(),
-        paid: (json['paid'] as num).toDouble(),
-        debt: (json['debt'] as num).toDouble(),
+        charged: ApiJson.asDouble(json['charged']),
+        paid: ApiJson.asDouble(json['paid']),
+        debt: ApiJson.asDouble(json['debt']),
       );
 }
 
@@ -27,9 +27,9 @@ class ResidentBalances {
   double get totalDebt => maintenance.debt + targeted.debt + capitalRepair.debt;
 
   factory ResidentBalances.fromJson(Map<String, dynamic> json) => ResidentBalances(
-        maintenance: BucketBalance.fromJson(json['MAINTENANCE'] as Map<String, dynamic>),
-        targeted: BucketBalance.fromJson(json['TARGETED'] as Map<String, dynamic>),
-        capitalRepair: BucketBalance.fromJson(json['CAPITAL_REPAIR'] as Map<String, dynamic>),
+        maintenance: BucketBalance.fromJson(ApiJson.asMap(json['MAINTENANCE'])),
+        targeted: BucketBalance.fromJson(ApiJson.asMap(json['TARGETED'])),
+        capitalRepair: BucketBalance.fromJson(ApiJson.asMap(json['CAPITAL_REPAIR'])),
       );
 }
 
@@ -50,14 +50,17 @@ class Charge {
     required this.tariffCategory,
   });
 
-  factory Charge.fromJson(Map<String, dynamic> json) => Charge(
-        id: json['id'] as String,
-        period: DateTime.parse(json['period'] as String),
-        amount: double.parse(json['amount'] as String),
-        dueDate: DateTime.parse(json['dueDate'] as String),
-        status: json['status'] as String,
-        tariffCategory: (json['tariff'] as Map<String, dynamic>)['category'] as String,
-      );
+  factory Charge.fromJson(Map<String, dynamic> json) {
+    final tariff = ApiJson.asMap(json['tariff']);
+    return Charge(
+      id: ApiJson.asNonEmptyString(json['id']),
+      period: ApiJson.asDateTime(json['period']),
+      amount: ApiJson.asDouble(json['amount'], allowString: true),
+      dueDate: ApiJson.asDateTime(json['dueDate']),
+      status: ApiJson.asString(json['status']),
+      tariffCategory: ApiJson.asString(tariff['category']),
+    );
+  }
 }
 
 class Payment {
@@ -69,10 +72,10 @@ class Payment {
   Payment({required this.id, required this.amount, required this.paidAt, this.method});
 
   factory Payment.fromJson(Map<String, dynamic> json) => Payment(
-        id: json['id'] as String,
-        amount: double.parse(json['amount'] as String),
-        paidAt: DateTime.parse(json['paidAt'] as String),
-        method: json['method'] as String?,
+        id: ApiJson.asNonEmptyString(json['id']),
+        amount: ApiJson.asDouble(json['amount'], allowString: true),
+        paidAt: ApiJson.asDateTime(json['paidAt']),
+        method: ApiJson.asNullableString(json['method']),
       );
 }
 
@@ -96,13 +99,12 @@ class FinanceRepository {
   final _api = ApiClient.instance;
 
   Future<ResidentFinance> get() async {
-    final data = await _api.get('/api/finance/resident') as Map<String, dynamic>;
-    final rawBalances = data['balances'] as Map<String, dynamic>?;
+    final data = ApiJson.asMap(await _api.get('/api/finance/resident'));
+    final rawBalances = ApiJson.asNullableMap(data['balances']);
     return ResidentFinance(
       balances: rawBalances != null ? ResidentBalances.fromJson(rawBalances) : null,
-      charges: (data['charges'] as List).cast<Map<String, dynamic>>().map(Charge.fromJson).toList(),
-      payments:
-          (data['payments'] as List).cast<Map<String, dynamic>>().map(Payment.fromJson).toList(),
+      charges: ApiJson.asMapList(data['charges']).map(Charge.fromJson).toList(),
+      payments: ApiJson.asMapList(data['payments']).map(Payment.fromJson).toList(),
     );
   }
 }

@@ -18,14 +18,17 @@ class RequestsStats {
     required this.byCategory,
   });
 
-  factory RequestsStats.fromJson(Map<String, dynamic> json) => RequestsStats(
-        total: (json['total'] as num?)?.toInt() ?? 0,
-        resolved: (json['resolved'] as num?)?.toInt() ?? 0,
-        inProgress: (json['inProgress'] as num?)?.toInt() ?? 0,
-        received: (json['received'] as num?)?.toInt() ?? 0,
-        byCategory: ((json['byCategory'] as Map<String, dynamic>?) ?? {})
-            .map((k, v) => MapEntry(k, (v as num).toInt())),
-      );
+  factory RequestsStats.fromJson(Map<String, dynamic> json) {
+    final rawByCategory = ApiJson.asNullableMap(json['byCategory']) ??
+        const <String, dynamic>{};
+    return RequestsStats(
+      total: ApiJson.asInt(json['total'], defaultValue: 0),
+      resolved: ApiJson.asInt(json['resolved'], defaultValue: 0),
+      inProgress: ApiJson.asInt(json['inProgress'], defaultValue: 0),
+      received: ApiJson.asInt(json['received'], defaultValue: 0),
+      byCategory: rawByCategory.map((k, v) => MapEntry(k, ApiJson.asInt(v))),
+    );
+  }
 }
 
 class FinanceStats {
@@ -46,12 +49,15 @@ class FinanceStats {
   });
 
   factory FinanceStats.fromJson(Map<String, dynamic> json) => FinanceStats(
-        totalCharged: (json['totalCharged'] as num?)?.toDouble() ?? 0,
-        totalPaid: (json['totalPaid'] as num?)?.toDouble() ?? 0,
-        totalDebt: (json['totalDebt'] as num?)?.toDouble() ?? 0,
-        apartmentsWithDebt: (json['apartmentsWithDebt'] as num?)?.toInt() ?? 0,
-        apartmentsTotal: (json['apartmentsTotal'] as num?)?.toInt() ?? 0,
-        progressPct: (json['progressPct'] as num?)?.toInt() ?? 0,
+        totalCharged:
+            ApiJson.asNullableDouble(json['totalCharged']) ?? 0,
+        totalPaid: ApiJson.asNullableDouble(json['totalPaid']) ?? 0,
+        totalDebt: ApiJson.asNullableDouble(json['totalDebt']) ?? 0,
+        apartmentsWithDebt:
+            ApiJson.asInt(json['apartmentsWithDebt'], defaultValue: 0),
+        apartmentsTotal:
+            ApiJson.asInt(json['apartmentsTotal'], defaultValue: 0),
+        progressPct: ApiJson.asInt(json['progressPct'], defaultValue: 0),
       );
 }
 
@@ -61,7 +67,7 @@ class PollsStats {
   PollsStats({required this.active});
 
   factory PollsStats.fromJson(Map<String, dynamic> json) =>
-      PollsStats(active: (json['active'] as num?)?.toInt() ?? 0);
+      PollsStats(active: ApiJson.asInt(json['active'], defaultValue: 0));
 }
 
 class ChairmanAnalytics {
@@ -75,13 +81,11 @@ class ChairmanAnalytics {
     required this.polls,
   });
 
-  factory ChairmanAnalytics.fromJson(Map<String, dynamic> json) => ChairmanAnalytics(
-        requests: RequestsStats.fromJson(
-            (json['requests'] as Map<String, dynamic>?) ?? {}),
-        finance: FinanceStats.fromJson(
-            (json['finance'] as Map<String, dynamic>?) ?? {}),
-        polls: PollsStats.fromJson(
-            (json['polls'] as Map<String, dynamic>?) ?? {}),
+  factory ChairmanAnalytics.fromJson(Map<String, dynamic> json) =>
+      ChairmanAnalytics(
+        requests: RequestsStats.fromJson(ApiJson.asMap(json['requests'])),
+        finance: FinanceStats.fromJson(ApiJson.asMap(json['finance'])),
+        polls: PollsStats.fromJson(ApiJson.asMap(json['polls'])),
       );
 }
 
@@ -93,8 +97,11 @@ class AnalyticsRepository {
 
   // period: 'month' | 'quarter' | 'year'
   Future<ChairmanAnalytics> getChairmanAnalytics({String period = 'month'}) async {
-    final data =
-        await _api.get('/api/analytics/chairman?period=$period') as Map<String, dynamic>;
+    final data = ApiJson.asMap(
+      await _api.get(
+        '/api/analytics/chairman?period=${Uri.encodeQueryComponent(period)}',
+      ),
+    );
     return ChairmanAnalytics.fromJson(data);
   }
 }

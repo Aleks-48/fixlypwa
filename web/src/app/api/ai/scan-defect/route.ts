@@ -33,12 +33,12 @@ export async function POST(req: Request) {
 
   const { imageBase64, hintText } = parsed.data;
 
-  if (!env.GROQ_API_KEY || env.LLM_PROVIDER !== "groq") {
+  if (env.LLM_PROVIDER !== "ollama" && (!env.GROQ_API_KEY || env.LLM_PROVIDER !== "groq")) {
     return fail("AI_NOT_CONFIGURED", "GROQ_API_KEY не настроен", 503);
   }
 
   try {
-    const groq = new Groq({ apiKey: env.GROQ_API_KEY });
+
 
     const systemPrompt = `Ты эксперт по коммунально-бытовым проблемам ЖКХ и ОСИ. 
 Проанализируй предоставленное фото/описание поломки и верни результат СТРОГО в формате JSON без какого-либо другого текста или тегов markdown.
@@ -58,6 +58,18 @@ export async function POST(req: Request) {
 - ELEVATOR (лифт, застревание, двери лифта, шумы)
 - OTHER (прочее)`;
 
+    if (env.LLM_PROVIDER === "ollama") {
+      const res = await fetch(env.OLLAMA_URL + "/api/chat", {
+        method:"POST", headers:{"Content-Type":"application/json"}, signal:AbortSignal.timeout(120000),
+        body:JSON.stringify({model:env.OLLAMA_VISION_MODEL, stream:false, format:"json",
+          options:{temperature:0}, messages:[{role:"system",content:systemPrompt},
+          {role:"user",content:hintText || "Опиши видимый дефект. Если дефект не виден, укажи это.",
+          ...(imageBase64 ? {images:[imageBase64.replace(/^data:image\/[\w+.-]+;base64,/, "")]} : {})}]})
+      });
+      if (!res.ok) throw new Error("Local model unavailable");
+      return ok(ScanResult.parse(JSON.parse((await res.json()).message.content)));
+    }
+    const groq = new Groq({ apiKey: env.GROQ_API_KEY });
     const messages: Groq.Chat.ChatCompletionMessageParam[] = [{ role: "system", content: systemPrompt }];
 
     if (imageBase64) {

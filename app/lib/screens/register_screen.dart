@@ -1,3 +1,4 @@
+import 'telegram_link_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -62,6 +63,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _pickRole(String role) {
+    if (_isLoading) return;
     setState(() {
       _selectedRole = role;
       _step = _Step.form;
@@ -69,7 +71,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
   }
 
+  String _trOr(String key, String ru, String kk, String en, String lang) {
+    final v = AppLocalizations.tr(key);
+    if (v != key) return v;
+    return lang == 'en' ? en : (lang == 'kk' ? kk : ru);
+  }
+
   Future<void> _requestCode() async {
+    if (_isLoading) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() {
       _isLoading = true;
@@ -78,26 +87,34 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       _fullName = _fullNameCtrl.text.trim();
       _identifier = _identifierCtrl.text.trim();
-      final devCode = await AuthRepository.instance.requestOtp(_identifier);
-      if (mounted) {
-        setState(() {
-          _step = _Step.code;
-          _devCode = devCode;
-        });
+      final result = await AuthRepository.instance.requestOtp(_identifier);
+      if (!mounted) return;
+      if (result.needsLink) {
+        setState(() => _isLoading = false);
+        await showTelegramLinkDialog(context, result.username, appLanguage.value);
+        return;
       }
+      setState(() {
+        _step = _Step.code;
+        _devCode = result.devCode;
+      });
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = AppLocalizations.tr('status_error'));
+      if (mounted) setState(() => _error = AppLocalizations.tr('status_error'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _verifyAndRoute() async {
+    if (_isLoading) return;
     final code = _codeCtrl.text.trim();
     if (code.length != 6) {
-      setState(() => _error = 'Код — 6 цифр');
+      final lang = appLanguage.value;
+      setState(() => _error = lang == 'en'
+          ? 'Code must be 6 digits'
+          : (lang == 'kk' ? 'Код — 6 сан' : 'Код — 6 цифр'));
       return;
     }
     setState(() {
@@ -131,9 +148,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           );
       }
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = AppLocalizations.tr('status_error'));
+      if (mounted) setState(() => _error = AppLocalizations.tr('status_error'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -151,7 +168,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             backgroundColor: c.background,
             elevation: 0,
             iconTheme: IconThemeData(color: c.textPrimary),
-            title: Text(AppLocalizations.tr('title_register'), style: TextStyle(color: c.textPrimary)),
+            title: Text(
+              _trOr('title_register', 'Регистрация', 'Тіркелу', 'Registration', lang),
+              style: TextStyle(color: c.textPrimary),
+            ),
           ),
           body: SafeArea(
             child: SingleChildScrollView(
@@ -200,7 +220,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: c.primary.withOpacity(0.1),
+                        color: c.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(AppDimens.radiusSm),
                       ),
                       child: Icon(r.icon, color: c.primary),
@@ -231,7 +251,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextButton.icon(
-            onPressed: () => setState(() => _step = _Step.role),
+            onPressed: _isLoading
+                ? null
+                : () => setState(() {
+                      _step = _Step.role;
+                      _error = null;
+                    }),
             icon: Icon(Icons.arrow_back, size: 16, color: c.textSecondary),
             label: Text('$roleLabel — ${lang == 'en' ? 'change' : (lang == 'kk' ? 'өзгерту' : 'изменить')}', style: TextStyle(color: c.textSecondary)),
             style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
@@ -245,7 +270,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
             c: c,
             controller: _fullNameCtrl,
             label: AppLocalizations.tr('label_full_name'),
-            hint: AppLocalizations.tr('placeholder_full_name'),
+            hint: _trOr(
+              'placeholder_full_name',
+              'Иванов Иван Иванович',
+              'Иванов Иван Иванович',
+              'John Doe',
+              lang,
+            ),
             icon: LucideIcons.user,
             validator: (v) {
               final s = v?.trim() ?? '';
@@ -259,7 +290,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
             c: c,
             controller: _identifierCtrl,
             label: AppLocalizations.tr('label_phone'),
-            hint: AppLocalizations.tr('placeholder_phone'),
+            hint: _trOr(
+              'placeholder_phone',
+              '+7 7XX XXX XX XX',
+              '+7 7XX XXX XX XX',
+              '+7 7XX XXX XX XX',
+              lang,
+            ),
             icon: LucideIcons.phone,
             keyboardType: TextInputType.phone,
             validator: (v) {
@@ -361,18 +398,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
             style: TextStyle(
                 color: c.textPrimary, fontSize: 24, fontWeight: AppTypography.extraBold)),
         const SizedBox(height: 8),
-        Text('${AppLocalizations.tr('code_sent_notice')}: $_identifier',
-            style: TextStyle(color: c.textSecondary, fontSize: AppTypography.body)),
+        Text(
+          '${_trOr('code_sent_notice', 'Код отправлен на', 'Код жіберілді', 'Code sent to', lang)}: $_identifier',
+          style: TextStyle(color: c.textSecondary, fontSize: AppTypography.body),
+        ),
         const SizedBox(height: AppDimens.spaceLg),
         _field(
           c: c,
           controller: _codeCtrl,
-          label: AppLocalizations.tr('label_enter_code'),
+          label: _trOr('label_enter_code', 'Код подтверждения', 'Растау коды', 'Verification code', lang),
           hint: '123456',
           icon: LucideIcons.keyRound,
           keyboardType: TextInputType.number,
         ),
-        if (_devCode != null && dotenv.env['OTP_DEV_ECHO'] == '1') ...[
+        if (_devCode != null && dotenv.isInitialized && dotenv.env['OTP_DEV_ECHO'] == '1') ...[
           const SizedBox(height: 8),
           Text(' Dev OTP: $_devCode',
               style: TextStyle(color: c.warning, fontSize: AppTypography.caption, fontWeight: FontWeight.bold)),
@@ -397,7 +436,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
-                : Text(AppLocalizations.tr('btn_verify_code'),
+                : Text(
+                    _trOr('btn_verify_code', 'Подтвердить', 'Растау', 'Verify', lang),
                     style: const TextStyle(
                         color: Colors.white,
                         fontWeight: AppTypography.bold,

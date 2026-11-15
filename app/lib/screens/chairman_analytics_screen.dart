@@ -24,6 +24,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   ChairmanAnalytics? _data;
   bool _loading = true;
   String? _error;
+  int _loadSeq = 0;
 
   @override
   void initState() {
@@ -32,18 +33,26 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   }
 
   Future<void> _load() async {
+    final seq = ++_loadSeq;
+    final period = _period;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final data = await AnalyticsRepository.instance
-          .getChairmanAnalytics(period: _period);
-      if (mounted) setState(() => _data = data);
+          .getChairmanAnalytics(period: period);
+      if (mounted && seq == _loadSeq && _period == period) {
+        setState(() => _data = data);
+      }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted && seq == _loadSeq && _period == period) {
+        setState(() => _error = e.toString());
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && seq == _loadSeq) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -92,31 +101,40 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   }
 
   Widget _buildError(AppColors c) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppDimens.spaceLg),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(LucideIcons.alertCircle, color: c.danger, size: 40),
-            const SizedBox(height: AppDimens.spaceMd),
-            Text(
-              AppLocalizations.tr('status_error'),
-              style: TextStyle(color: c.danger, fontWeight: AppTypography.bold),
+    return LayoutBuilder(
+      builder: (_, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppDimens.spaceLg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(LucideIcons.alertCircle, color: c.danger, size: 40),
+                  const SizedBox(height: AppDimens.spaceMd),
+                  Text(
+                    AppLocalizations.tr('status_error'),
+                    style: TextStyle(color: c.danger, fontWeight: AppTypography.bold),
+                  ),
+                  const SizedBox(height: AppDimens.spaceSm),
+                  Text(
+                    _error ?? '',
+                    style: TextStyle(color: c.textSecondary, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: AppDimens.spaceLg),
+                  ElevatedButton.icon(
+                    onPressed: _load,
+                    icon: const Icon(LucideIcons.refreshCw, size: 16),
+                    label: Text(AppLocalizations.tr('btn_retry')),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: AppDimens.spaceSm),
-            Text(
-              _error ?? '',
-              style: TextStyle(color: c.textSecondary, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppDimens.spaceLg),
-            ElevatedButton.icon(
-              onPressed: _load,
-              icon: const Icon(LucideIcons.refreshCw, size: 16),
-              label: Text(AppLocalizations.tr('btn_retry')),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -190,6 +208,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                 alignment: Alignment.center,
                 child: Text(
                   pair.$2,
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     color: isSelected ? Colors.white : c.textSecondary,
                     fontWeight:
@@ -225,7 +244,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildFinanceCard(AppColors c, FinanceStats f) {
-    final pct = f.progressPct / 100.0;
+    final pct = (f.progressPct / 100.0).clamp(0.0, 1.0);
     final pctStr = '${f.progressPct}%';
 
     return Container(
@@ -242,28 +261,34 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(AppDimens.radiusSm),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(AppDimens.radiusSm),
+                      ),
+                      child:
+                          const Icon(LucideIcons.wallet, color: Colors.green, size: 20),
                     ),
-                    child:
-                        const Icon(LucideIcons.wallet, color: Colors.green, size: 20),
-                  ),
-                  const SizedBox(width: AppDimens.spaceSm),
-                  Text(
-                    AppLocalizations.tr('analytics_collection_rate'),
-                    style: TextStyle(
-                      color: c.textSecondary,
-                      fontWeight: AppTypography.medium,
-                      fontSize: 13,
+                    const SizedBox(width: AppDimens.spaceSm),
+                    Flexible(
+                      child: Text(
+                        AppLocalizations.tr('analytics_collection_rate'),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: c.textSecondary,
+                          fontWeight: AppTypography.medium,
+                          fontSize: 13,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -314,41 +339,50 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           // Долг + квартиры с долгом
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(AppLocalizations.tr('analytics_total_debt'),
-                      style: TextStyle(fontSize: 12, color: c.textSecondary)),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${_fmt(f.totalDebt)} ₸',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: AppTypography.bold,
-                      color: Colors.redAccent,
-                    ),
-                  ),
-                ],
-              ),
-              if (f.apartmentsTotal > 0)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(AppLocalizations.tr('analytics_apts_with_debt'),
-                        style:
-                            TextStyle(fontSize: 12, color: c.textSecondary)),
+                    Text(AppLocalizations.tr('analytics_total_debt'),
+                        style: TextStyle(fontSize: 12, color: c.textSecondary)),
                     const SizedBox(height: 2),
                     Text(
-                      '${f.apartmentsWithDebt} ${AppLocalizations.tr('analytics_of')} ${f.apartmentsTotal}',
-                      style: TextStyle(
+                      '${_fmt(f.totalDebt)} ₸',
+                      style: const TextStyle(
                         fontSize: 16,
                         fontWeight: AppTypography.bold,
-                        color: c.textPrimary,
+                        color: Colors.redAccent,
                       ),
                     ),
                   ],
                 ),
+              ),
+              if (f.apartmentsTotal > 0) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(AppLocalizations.tr('analytics_apts_with_debt'),
+                          textAlign: TextAlign.end,
+                          style:
+                              TextStyle(fontSize: 12, color: c.textSecondary)),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${f.apartmentsWithDebt} ${AppLocalizations.tr('analytics_of')} ${f.apartmentsTotal}',
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: AppTypography.bold,
+                          color: c.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ],
@@ -505,7 +539,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       ),
       child: Column(
         children: sorted.map((entry) {
-          final pct = total > 0 ? entry.value / total : 0.0;
+          final pct = total > 0 ? (entry.value / total).clamp(0.0, 1.0) : 0.0;
           final label = getRequestCategoryLabel(entry.key);
           return Padding(
             padding: const EdgeInsets.only(bottom: AppDimens.spaceMd),
@@ -515,14 +549,18 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: c.textPrimary,
-                        fontWeight: AppTypography.medium,
-                        fontSize: 13,
+                    Expanded(
+                      child: Text(
+                        label,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontWeight: AppTypography.medium,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
                       '${entry.value} (${(pct * 100).round()}%)',
                       style: TextStyle(
@@ -625,11 +663,13 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
 
   String _fmt(double v) {
     if (v == 0) return '0';
-    if (v >= 1000000) {
-      return '${(v / 1000000).toStringAsFixed(1)} млн';
+    final sign = v < 0 ? '-' : '';
+    final absV = v.abs();
+    if (absV >= 1000000) {
+      return '$sign${(absV / 1000000).toStringAsFixed(1)} млн';
     }
-    if (v >= 1000) {
-      final s = v.round().toString();
+    if (absV >= 1000) {
+      final s = absV.round().toString();
       // Группировка по 3 цифры: 1 280 000
       final buf = StringBuffer();
       final r = s.length % 3;
@@ -637,8 +677,8 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         if (i != 0 && (i - r) % 3 == 0) buf.write(' ');
         buf.write(s[i]);
       }
-      return buf.toString();
+      return '$sign${buf.toString()}';
     }
-    return v.round().toString();
+    return '$sign${absV.round()}';
   }
 }

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'package:image_picker/image_picker.dart';
+import '../core/api_client.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/theme/app_theme.dart';
@@ -81,8 +84,12 @@ class _MasterProfileTab extends StatefulWidget {
 }
 
 class _MasterProfileTabState extends State<_MasterProfileTab> {
+  late MasterProfile _profile = widget.master;
   MasterDetail? _detail;
   bool _loading = true;
+  bool _loggingOut = false;
+  bool _openingPortfolioSheet = false;
+  int _loadSeq = 0;
 
   @override
   void initState() {
@@ -90,226 +97,105 @@ class _MasterProfileTabState extends State<_MasterProfileTab> {
     _loadDetails();
   }
 
-  Future<void> _loadDetails() async {
-    setState(() => _loading = true);
-    try {
-      final details = await MasterRepository.instance.myDetails();
-      if (mounted) {
-        setState(() {
-          _detail = details;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+  @override
+  void didUpdateWidget(covariant _MasterProfileTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.master != widget.master) {
+      _profile = widget.master;
     }
   }
 
-  void _showEditMasterProfileDialog(BuildContext context) {
-    final c = AppColors.of(context);
-    final nameCtrl = TextEditingController(text: widget.master.fullName);
-    final bioCtrl = TextEditingController(text: widget.master.bio ?? '');
-    final cityCtrl = TextEditingController(text: widget.master.city);
+  Future<void> _loadDetails({bool updateProfile = true}) async {
+    final seq = ++_loadSeq;
+    if (mounted) {
+      setState(() => _loading = true);
+    }
+    try {
+      final details = await MasterRepository.instance.myDetails();
+      if (!mounted || seq != _loadSeq) return;
+      setState(() {
+        _detail = details;
+        if (updateProfile && details != null) {
+          _profile = MasterProfile(
+            id: details.id.isNotEmpty ? details.id : _profile.id,
+            status: _profile.status,
+            city: details.city.isNotEmpty ? details.city : _profile.city,
+            categories: details.categories.isNotEmpty
+                ? details.categories
+                : _profile.categories,
+            fullName: details.fullName.isNotEmpty
+                ? details.fullName
+                : _profile.fullName,
+            bio: details.bio ?? _profile.bio,
+          );
+        }
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted && seq == _loadSeq) {
+        setState(() => _loading = false);
+      }
+    }
+  }
 
-    showDialog(
+  Future<void> _showEditMasterProfileDialog(BuildContext context) async {
+    final updated = await showDialog<MasterProfile>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.card,
-        title: Text(AppLocalizations.tr('profile_edit'), style: TextStyle(color: c.textPrimary)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                style: TextStyle(color: c.textPrimary),
-                decoration: InputDecoration(
-                  labelText: AppLocalizations.tr('label_full_name'),
-                  labelStyle: TextStyle(color: c.textSecondary),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: cityCtrl,
-                style: TextStyle(color: c.textPrimary),
-                decoration: InputDecoration(
-                  labelText: 'Город',
-                  labelStyle: TextStyle(color: c.textSecondary),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: bioCtrl,
-                maxLines: 2,
-                style: TextStyle(color: c.textPrimary),
-                decoration: InputDecoration(
-                  labelText: AppLocalizations.tr('master_bio'),
-                  labelStyle: TextStyle(color: c.textSecondary),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(AppLocalizations.tr('btn_cancel')),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final newName = nameCtrl.text.trim();
-              if (newName.isNotEmpty) {
-                await AuthRepository.instance.updateProfile(fullName: newName);
-              }
-              await MasterRepository.instance.updateMasterProfile(
-                city: cityCtrl.text.trim(),
-                bio: bioCtrl.text.trim(),
-              );
-              if (ctx.mounted) Navigator.pop(ctx);
-              _loadDetails();
-            },
-            child: Text(AppLocalizations.tr('btn_save')),
-          ),
-        ],
-      ),
+      builder: (_) => _EditMasterProfileDialog(profile: _profile),
     );
+    if (updated != null && mounted) {
+      setState(() => _profile = updated);
+      unawaited(_loadDetails(updateProfile: false));
+    }
   }
 
   Future<void> _logout(BuildContext context) async {
-    await AuthRepository.instance.logout();
-    if (!context.mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (_) => false,
-    );
+    if (_loggingOut) return;
+    setState(() => _loggingOut = true);
+    try {
+      await AuthRepository.instance.logout();
+      if (!context.mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (_) => false,
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось выйти из аккаунта')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
   }
 
-  void _showAddPortfolioModal() {
-    final c = AppColors.of(context);
-    final titleCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    String category = widget.master.categories.isNotEmpty ? widget.master.categories.first : 'PLUMBING';
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-          child: Container(
-            decoration: BoxDecoration(
-              color: c.card,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimens.radiusLg)),
-            ),
-            padding: const EdgeInsets.all(AppDimens.spaceMd),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: c.textTertiary.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                Text(
-                  AppLocalizations.tr('add_portfolio_item'),
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: AppTypography.sectionTitle,
-                    fontWeight: AppTypography.bold,
-                  ),
-                ),
-                const SizedBox(height: AppDimens.spaceMd),
-
-                // Название
-                TextField(
-                  controller: titleCtrl,
-                  style: TextStyle(color: c.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: AppLocalizations.tr('portfolio_title_hint'),
-                    hintStyle: TextStyle(color: c.textTertiary),
-                    filled: true,
-                    fillColor: c.background,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                      borderSide: BorderSide(color: c.cardBorder),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppDimens.spaceSm),
-
-                // Описание
-                TextField(
-                  controller: descCtrl,
-                  maxLines: 2,
-                  style: TextStyle(color: c.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: 'Описание выполненной работы...',
-                    hintStyle: TextStyle(color: c.textTertiary),
-                    filled: true,
-                    fillColor: c.background,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                      borderSide: BorderSide(color: c.cardBorder),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppDimens.spaceMd),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: AppDimens.primaryTapTarget,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(backgroundColor: c.primary),
-                    onPressed: () async {
-                      final title = titleCtrl.text.trim();
-                      if (title.isEmpty) return;
-                      Navigator.pop(ctx);
-                      if (mounted) {
-                        final messenger = ScaffoldMessenger.of(context);
-                        try {
-                          await MasterRepository.instance.addPortfolioItem(
-                            title: title,
-                            description: descCtrl.text.trim(),
-                            category: category,
-                          );
-                          _loadDetails();
-                        } catch (e) {
-                          messenger.showSnackBar(
-                            SnackBar(content: Text('Ошибка добавления: $e')),
-                          );
-                        }
-                      }
-                    },
-                    icon: const Icon(LucideIcons.plus, color: Colors.white, size: 18),
-                    label: Text(
-                      AppLocalizations.tr('add_portfolio_item'),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppDimens.spaceXs),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  Future<void> _showAddPortfolioModal() async {
+    if (_openingPortfolioSheet) return;
+    _openingPortfolioSheet = true;
+    final category =
+        _profile.categories.isNotEmpty ? _profile.categories.first : 'PLUMBING';
+    try {
+      final added = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _AddPortfolioSheet(category: category),
+      );
+      if (added == true && mounted) {
+        await _loadDetails(updateProfile: false);
+      }
+    } finally {
+      _openingPortfolioSheet = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     final user = widget.user;
-    final master = widget.master;
+    final master = _profile;
     final detail = _detail;
 
     final ratingStr = detail != null ? detail.rating.toStringAsFixed(1) : '5.0';
@@ -389,12 +275,16 @@ class _MasterProfileTabState extends State<_MasterProfileTab> {
                               children: [
                                 Icon(LucideIcons.checkCircle2, color: c.success, size: 14),
                                 const SizedBox(width: 4),
-                                Text(
-                                  AppLocalizations.tr('master_verified'),
-                                  style: TextStyle(
-                                    color: c.success,
-                                    fontSize: AppTypography.caption,
-                                    fontWeight: AppTypography.semibold,
+                                Expanded(
+                                  child: Text(
+                                    AppLocalizations.tr('master_verified'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: c.success,
+                                      fontSize: AppTypography.caption,
+                                      fontWeight: AppTypography.semibold,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -410,6 +300,13 @@ class _MasterProfileTabState extends State<_MasterProfileTab> {
                   _row(c, LucideIcons.mapPin, master.city),
                   if (user.email != null) _row(c, LucideIcons.mail, user.email!),
                   if (user.phone != null) _row(c, LucideIcons.phone, user.phone!),
+                  if (master.bio != null && master.bio!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      master.bio!,
+                      style: TextStyle(color: c.textSecondary, fontSize: 13),
+                    ),
+                  ],
                   const SizedBox(height: AppDimens.spaceSm),
                   Text(
                     AppLocalizations.tr('master_specialization'),
@@ -447,13 +344,12 @@ class _MasterProfileTabState extends State<_MasterProfileTab> {
                 border: Border.all(color: c.cardBorder),
               ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _statColumn(c, '$ratingStr ⭐', AppLocalizations.tr('master_rating')),
+                  Expanded(child: _statColumn(c, '$ratingStr ⭐', AppLocalizations.tr('master_rating'))),
                   Container(width: 1, height: 32, color: c.cardBorder),
-                  _statColumn(c, reviewsCountStr, AppLocalizations.tr('master_tab_reviews')),
+                  Expanded(child: _statColumn(c, reviewsCountStr, AppLocalizations.tr('master_tab_reviews'))),
                   Container(width: 1, height: 32, color: c.cardBorder),
-                  _statColumn(c, offersCountStr, AppLocalizations.tr('master_responses')),
+                  Expanded(child: _statColumn(c, offersCountStr, AppLocalizations.tr('master_responses'))),
                 ],
               ),
             ),
@@ -690,7 +586,7 @@ class _MasterProfileTabState extends State<_MasterProfileTab> {
             SizedBox(
               height: AppDimens.primaryTapTarget,
               child: OutlinedButton.icon(
-                onPressed: () => _logout(context),
+                onPressed: _loggingOut ? null : () => _logout(context),
                 icon: Icon(LucideIcons.logOut, color: c.danger),
                 label: Text(
                   AppLocalizations.tr('profile_logout'),
@@ -735,6 +631,8 @@ class _MasterProfileTabState extends State<_MasterProfileTab> {
       children: [
         Text(
           value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: c.textPrimary,
             fontWeight: AppTypography.bold,
@@ -744,6 +642,9 @@ class _MasterProfileTabState extends State<_MasterProfileTab> {
         const SizedBox(height: 2),
         Text(
           label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
           style: TextStyle(color: c.textTertiary, fontSize: AppTypography.caption),
         ),
       ],
@@ -772,6 +673,375 @@ class _MasterProfileTabState extends State<_MasterProfileTab> {
         ),
         trailing: Icon(LucideIcons.chevronRight, color: c.textTertiary, size: 18),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+class _EditMasterProfileDialog extends StatefulWidget {
+  final MasterProfile profile;
+  const _EditMasterProfileDialog({required this.profile});
+
+  @override
+  State<_EditMasterProfileDialog> createState() =>
+      _EditMasterProfileDialogState();
+}
+
+class _EditMasterProfileDialogState extends State<_EditMasterProfileDialog> {
+  late final TextEditingController _nameCtrl =
+      TextEditingController(text: widget.profile.fullName);
+  late final TextEditingController _cityCtrl =
+      TextEditingController(text: widget.profile.city);
+  late final TextEditingController _bioCtrl =
+      TextEditingController(text: widget.profile.bio ?? '');
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _cityCtrl.dispose();
+    _bioCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final newName = _nameCtrl.text.trim();
+    final newCity = _cityCtrl.text.trim();
+    final newBio = _bioCtrl.text.trim();
+    if (newName.isEmpty) {
+      setState(() => _error = 'Укажите ФИО');
+      return;
+    }
+    if (newCity.isEmpty) {
+      setState(() => _error = 'Укажите город');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await AuthRepository.instance.updateProfile(fullName: newName);
+      final updated = await MasterRepository.instance.updateMasterProfile(
+        city: newCity,
+        bio: newBio,
+      );
+      final merged = MasterProfile(
+        id: updated.id.isNotEmpty ? updated.id : widget.profile.id,
+        status: updated.status.isNotEmpty ? updated.status : widget.profile.status,
+        city: updated.city.isNotEmpty ? updated.city : newCity,
+        categories: updated.categories.isNotEmpty
+            ? updated.categories
+            : widget.profile.categories,
+        fullName: newName,
+        bio: newBio.isEmpty
+            ? null
+            : ((updated.bio != null && updated.bio!.isNotEmpty)
+                ? updated.bio
+                : newBio),
+      );
+      if (mounted) Navigator.pop(context, merged);
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = e.message;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = 'Не удалось сохранить профиль';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return PopScope(
+      canPop: !_saving,
+      child: AlertDialog(
+        backgroundColor: c.card,
+        title: Text(
+          AppLocalizations.tr('profile_edit'),
+          style: TextStyle(color: c.textPrimary),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _nameCtrl,
+                enabled: !_saving,
+                style: TextStyle(color: c.textPrimary),
+                decoration: InputDecoration(
+                  labelText: AppLocalizations.tr('label_full_name'),
+                  labelStyle: TextStyle(color: c.textSecondary),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _cityCtrl,
+                enabled: !_saving,
+                style: TextStyle(color: c.textPrimary),
+                decoration: InputDecoration(
+                  labelText: 'Город',
+                  labelStyle: TextStyle(color: c.textSecondary),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _bioCtrl,
+                enabled: !_saving,
+                maxLines: 2,
+                style: TextStyle(color: c.textPrimary),
+                decoration: InputDecoration(
+                  labelText: AppLocalizations.tr('master_bio'),
+                  labelStyle: TextStyle(color: c.textSecondary),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _error!,
+                  style: TextStyle(color: c.danger, fontSize: 13),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : () => Navigator.pop(context),
+            child: Text(AppLocalizations.tr('btn_cancel')),
+          ),
+          ElevatedButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(AppLocalizations.tr('btn_save')),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddPortfolioSheet extends StatefulWidget {
+  final String category;
+  const _AddPortfolioSheet({required this.category});
+
+  @override
+  State<_AddPortfolioSheet> createState() => _AddPortfolioSheetState();
+}
+
+class _AddPortfolioSheetState extends State<_AddPortfolioSheet> {
+  final _titleCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  XFile? _photo;
+  String? _uploadedUrl;
+  bool _saving = false;
+  String? _failure;
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    if (_saving) return;
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1600,
+        imageQuality: 85,
+      );
+      if (picked != null && mounted) {
+        setState(() {
+          _photo = picked;
+          _uploadedUrl = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _failure = 'Не удалось выбрать фото');
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    final title = _titleCtrl.text.trim();
+    if (title.isEmpty) {
+      setState(() => _failure = 'Введите название работы');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _failure = null;
+    });
+    try {
+      if (_photo != null) {
+        _uploadedUrl ??= await ApiClient.instance.uploadPhoto(_photo!.path);
+      }
+      await MasterRepository.instance.addPortfolioItem(
+        title: title,
+        description: _descCtrl.text.trim(),
+        category: widget.category,
+        photoUrls: _uploadedUrl == null ? [] : [_uploadedUrl!],
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _failure = e is ApiException ? e.message : 'Ошибка добавления: $e';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    return PopScope(
+      canPop: !_saving,
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: c.card,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(AppDimens.radiusLg),
+            ),
+          ),
+          padding: const EdgeInsets.all(AppDimens.spaceMd),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: c.textTertiary.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Text(
+                  AppLocalizations.tr('add_portfolio_item'),
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: AppTypography.sectionTitle,
+                    fontWeight: AppTypography.bold,
+                  ),
+                ),
+                const SizedBox(height: AppDimens.spaceMd),
+                TextField(
+                  controller: _titleCtrl,
+                  enabled: !_saving,
+                  style: TextStyle(color: c.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: AppLocalizations.tr('portfolio_title_hint'),
+                    hintStyle: TextStyle(color: c.textTertiary),
+                    filled: true,
+                    fillColor: c.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                      borderSide: BorderSide(color: c.cardBorder),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppDimens.spaceSm),
+                TextField(
+                  controller: _descCtrl,
+                  enabled: !_saving,
+                  maxLines: 2,
+                  style: TextStyle(color: c.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Описание выполненной работы...',
+                    hintStyle: TextStyle(color: c.textTertiary),
+                    filled: true,
+                    fillColor: c.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                      borderSide: BorderSide(color: c.cardBorder),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppDimens.spaceMd),
+                TextButton.icon(
+                  icon: const Icon(Icons.photo),
+                  label: Text(
+                    _photo?.name ?? 'Прикрепить фото',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed: _saving ? null : _pickPhoto,
+                ),
+                if (_failure != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      _failure!,
+                      style: TextStyle(color: c.danger, fontSize: 13),
+                    ),
+                  ),
+                ],
+                SizedBox(
+                  width: double.infinity,
+                  height: AppDimens.primaryTapTarget,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: c.primary),
+                    onPressed: _saving ? null : _save,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(LucideIcons.plus,
+                            color: Colors.white, size: 18),
+                    label: Text(
+                      AppLocalizations.tr('add_portfolio_item'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppDimens.spaceXs),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

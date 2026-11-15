@@ -19,10 +19,10 @@ class CheckoutResult {
   });
 
   factory CheckoutResult.fromJson(Map<String, dynamic> json) => CheckoutResult(
-        success: json['success'] as bool,
-        alreadyPaid: json['alreadyPaid'] as bool? ?? false,
-        gatewayRef: json['gatewayRef'] as String?,
-        amount: (json['amount'] as num?)?.toDouble(),
+        success: ApiJson.asBool(json['success']),
+        alreadyPaid: ApiJson.asBool(json['alreadyPaid'], defaultValue: false),
+        gatewayRef: ApiJson.asNullableString(json['gatewayRef']),
+        amount: ApiJson.asNullableDouble(json['amount']),
       );
 }
 
@@ -36,10 +36,10 @@ class PaymentsRepository {
   // Ошибки (нет счёта/сумма изменилась/имитация отказа 5%) приходят как ApiException — тот же
   // текст, что показывает сайт, отдельно парсить не нужно.
   Future<CheckoutResult> checkout({required String method, double? expectedAmount}) async {
-    final data = await _api.post('/api/payments/checkout', body: {
+    final data = ApiJson.asMap(await _api.post('/api/payments/checkout', body: {
       'method': method,
       if (expectedAmount != null) 'expectedAmount': expectedAmount,
-    }) as Map<String, dynamic>;
+    }));
     return CheckoutResult.fromJson(data);
   }
 }

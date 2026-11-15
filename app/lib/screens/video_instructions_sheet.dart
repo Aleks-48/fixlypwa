@@ -92,7 +92,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
           tip: 'Смартфоннан кіргенде код автоматты түрде қойылуы мүмкін.',
           icon: LucideIcons.smartphone,
           url: '$baseUrl/instructions',
-          steps: [
+          steps: const [
             _DocStep(
               num: 1,
               title: 'Телефон нөміріңізді енгізіңіз',
@@ -141,7 +141,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
           tip: 'Тапсырыстарды қосымшадан тыс өткізбеңіз — тек Fixly арқылы ресімделген жұмыстарға кепілдік беріледі.',
           icon: LucideIcons.wrench,
           url: '$baseUrl/instructions',
-          steps: [
+          steps: const [
             _DocStep(
               num: 1,
               title: 'Қызмет санатын таңдаңыз',
@@ -182,7 +182,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
             ),
           ],
         ),
-        _GuideItem(
+        const _GuideItem(
           id: 'voting',
           tag: 'Кондоминиум',
           title: '3. Онлайн дауыс беру және кворум',
@@ -239,7 +239,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
           tip: 'Пилот бойынша алғашқы 3 айға тариф бір пәтерге небәрі 50 ₸ құрайды.',
           icon: LucideIcons.building,
           url: '$baseUrl/instructions',
-          steps: [
+          steps: const [
             _DocStep(
               num: 1,
               title: 'Үйді қосу және оцифровка',
@@ -293,7 +293,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
           tip: 'Application runs smoothly on mobile phones and web browsers.',
           icon: LucideIcons.smartphone,
           url: '$baseUrl/instructions',
-          steps: [
+          steps: const [
             _DocStep(
               num: 1,
               title: 'Enter phone number',
@@ -342,7 +342,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
           tip: 'All orders processed inside Fixly carry a verified 30-day warranty.',
           icon: LucideIcons.wrench,
           url: '$baseUrl/instructions',
-          steps: [
+          steps: const [
             _DocStep(
               num: 1,
               title: 'Select service category',
@@ -383,7 +383,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
             ),
           ],
         ),
-        _GuideItem(
+        const _GuideItem(
           id: 'voting',
           tag: 'Condominium',
           title: '3. Digital Online Voting (General Meetings)',
@@ -440,7 +440,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
           tip: 'Pilot rate is 50 ₸ per apartment/month for the first 3 months.',
           icon: LucideIcons.building,
           url: '$baseUrl/instructions',
-          steps: [
+          steps: const [
             _DocStep(
               num: 1,
               title: 'Import registry & onboarding',
@@ -484,7 +484,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
     }
 
     // Default: Russian (ru)
-    return [
+    return const [
       _GuideItem(
         id: 'auth',
         tag: 'Быстрый вход',
@@ -686,8 +686,20 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
 
   Future<void> _openVideoUrl(String url) async {
     final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось открыть ссылку')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось открыть ссылку')),
+        );
+      }
     }
   }
 
@@ -810,7 +822,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
                       onTap: () => setState(() => _isDocsMode = true),
                       borderRadius: BorderRadius.circular(AppDimens.radiusSm),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                         decoration: BoxDecoration(
                           color: _isDocsMode ? c.primary : Colors.transparent,
                           borderRadius: BorderRadius.circular(AppDimens.radiusSm),
@@ -818,6 +830,8 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
                         alignment: Alignment.center,
                         child: Text(
                           docsBtnText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: _isDocsMode ? Colors.white : c.textSecondary,
                             fontSize: 12,
@@ -832,7 +846,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
                       onTap: () => setState(() => _isDocsMode = false),
                       borderRadius: BorderRadius.circular(AppDimens.radiusSm),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                         decoration: BoxDecoration(
                           color: !_isDocsMode ? c.primary : Colors.transparent,
                           borderRadius: BorderRadius.circular(AppDimens.radiusSm),
@@ -840,6 +854,8 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
                         alignment: Alignment.center,
                         child: Text(
                           videoBtnText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: !_isDocsMode ? Colors.white : c.textSecondary,
                             fontSize: 12,
@@ -1006,14 +1022,18 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
                                       Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Text(
-                                            '📱 ${st.screenTitle}',
-                                            style: TextStyle(
-                                              color: c.textPrimary,
-                                              fontSize: 11,
-                                              fontWeight: AppTypography.bold,
+                                          Expanded(
+                                            child: Text(
+                                              '📱 ${st.screenTitle}',
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: c.textPrimary,
+                                                fontSize: 11,
+                                                fontWeight: AppTypography.bold,
+                                              ),
                                             ),
                                           ),
+                                          const SizedBox(width: 6),
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(
@@ -1045,21 +1065,29 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
                                             ),
                                           ),
                                           child: Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
                                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                             children: [
-                                              Text(
-                                                fld.label,
-                                                style: TextStyle(
-                                                  color: c.textSecondary,
-                                                  fontSize: 10,
+                                              Flexible(
+                                                child: Text(
+                                                  fld.label,
+                                                  style: TextStyle(
+                                                    color: c.textSecondary,
+                                                    fontSize: 10,
+                                                  ),
                                                 ),
                                               ),
-                                              Text(
-                                                fld.value,
-                                                style: TextStyle(
-                                                  color: fld.active ? c.primary : c.textPrimary,
-                                                  fontSize: 11,
-                                                  fontWeight: AppTypography.semibold,
+                                              const SizedBox(width: 8),
+                                              Flexible(
+                                                flex: 2,
+                                                child: Text(
+                                                  fld.value,
+                                                  textAlign: TextAlign.end,
+                                                  style: TextStyle(
+                                                    color: fld.active ? c.primary : c.textPrimary,
+                                                    fontSize: 11,
+                                                    fontWeight: AppTypography.semibold,
+                                                  ),
                                                 ),
                                               ),
                                             ],
@@ -1069,7 +1097,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
                                       const SizedBox(height: 4),
                                       Container(
                                         width: double.infinity,
-                                        padding: const EdgeInsets.symmetric(vertical: 6),
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                         decoration: BoxDecoration(
                                           color: c.primary,
                                           borderRadius: BorderRadius.circular(6),
@@ -1077,6 +1105,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
                                         alignment: Alignment.center,
                                         child: Text(
                                           st.buttonText,
+                                          textAlign: TextAlign.center,
                                           style: const TextStyle(
                                             color: Colors.white,
                                             fontSize: 11,
@@ -1259,7 +1288,8 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: c.primary,
                                     foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    minimumSize: const Size(0, 48),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(AppDimens.radiusMd),
                                     ),
@@ -1317,6 +1347,7 @@ class _VideoInstructionsSheetState extends State<VideoInstructionsSheet> {
                       OutlinedButton(
                         onPressed: () => _openVideoUrl('https://t.me/fixlyosibot?start=video'),
                         style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 36),
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           side: BorderSide(color: c.primary),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.radiusSm)),

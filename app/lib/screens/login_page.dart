@@ -1,3 +1,4 @@
+import 'telegram_link_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -89,6 +90,7 @@ class _LoginPageState extends State<LoginPage>
 
   // ── ВХОД ПРЕДСЕДАТЕЛЯ ПО ПАРОЛЮ ─────────────────────────────
   Future<void> _loginWithPassword() async {
+    if (_isLoading) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() {
       _isLoading = true;
@@ -109,7 +111,9 @@ class _LoginPageState extends State<LoginPage>
     } on ApiException catch (e) {
       _showError(_localizeError(e));
     } catch (_) {
-      _showError(appLanguage.value == 'ru' ? 'Ошибка подключения' : 'Байланыс қатесі');
+      _showError(appLanguage.value == 'ru'
+          ? 'Ошибка подключения'
+          : (appLanguage.value == 'en' ? 'Connection error' : 'Байланыс қатесі'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -117,6 +121,7 @@ class _LoginPageState extends State<LoginPage>
 
   // ── ШАГ 1: запросить код ──────────────────────────────────
   Future<void> _requestCode() async {
+    if (_isLoading) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() {
       _isLoading = true;
@@ -125,17 +130,23 @@ class _LoginPageState extends State<LoginPage>
 
     try {
       _identifier = _identifierCtrl.text.trim();
-      final devCode = await AuthRepository.instance.requestOtp(_identifier);
-      if (mounted) {
-        setState(() {
-          _step = _Step.code;
-          _devCode = devCode;
-        });
+      final result = await AuthRepository.instance.requestOtp(_identifier);
+      if (!mounted) return;
+      if (result.needsLink) {
+        setState(() => _isLoading = false);
+        await showTelegramLinkDialog(context, result.username, appLanguage.value);
+        return;
       }
+      setState(() {
+        _step = _Step.code;
+        _devCode = result.devCode;
+      });
     } on ApiException catch (e) {
       _showError(_localizeError(e));
     } catch (_) {
-      _showError(appLanguage.value == 'ru' ? 'Ошибка подключения' : 'Байланыс қатесі');
+      _showError(appLanguage.value == 'ru'
+          ? 'Ошибка подключения'
+          : (appLanguage.value == 'en' ? 'Connection error' : 'Байланыс қатесі'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -143,9 +154,12 @@ class _LoginPageState extends State<LoginPage>
 
   // ── ШАГ 2: проверить код ──────────────────────────────────
   Future<void> _verifyCode() async {
+    if (_isLoading) return;
     final code = _codeCtrl.text.trim();
     if (code.length != 6) {
-      _showError(appLanguage.value == 'ru' ? 'Код — 6 цифр' : 'Код — 6 сан');
+      _showError(appLanguage.value == 'ru'
+          ? 'Код — 6 цифр'
+          : (appLanguage.value == 'en' ? 'Code must be 6 digits' : 'Код — 6 сан'));
       return;
     }
     setState(() {
@@ -165,7 +179,9 @@ class _LoginPageState extends State<LoginPage>
     } on ApiException catch (e) {
       _showError(_localizeError(e));
     } catch (_) {
-      _showError(appLanguage.value == 'ru' ? 'Ошибка подключения' : 'Байланыс қатесі');
+      _showError(appLanguage.value == 'ru'
+          ? 'Ошибка подключения'
+          : (appLanguage.value == 'en' ? 'Connection error' : 'Байланыс қатесі'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -179,22 +195,33 @@ class _LoginPageState extends State<LoginPage>
   // двуязычный — казахоязычный пользователь не должен видеть русские строки (code review
   // 2026-07-16, замена удалённого _mapAuthError). Неизвестный код — показываем текст сервера.
   String _localizeError(ApiException e) {
-    final ru = appLanguage.value == 'ru';
+    final lang = appLanguage.value;
+    final ru = lang == 'ru';
+    final en = lang == 'en';
+    if (e.code == 'RATE_LIMITED' || e.statusCode == 429) {
+      return ru
+          ? 'Слишком много попыток. Попробуйте позже'
+          : (en ? 'Too many attempts. Please try again later' : 'Тым көп әрекет. Кейінірек көріңіз');
+    }
     switch (e.code) {
-      case 'RATE_LIMITED':
-        return ru ? 'Слишком много попыток. Попробуйте позже' : 'Тым көп әрекет. Кейінірек көріңіз';
       case 'SMS_UNAVAILABLE':
         return ru
             ? 'Вход по SMS временно недоступен — используйте email'
-            : 'SMS арқылы кіру уақытша қолжетімсіз — email қолданыңыз';
+            : (en
+                ? 'SMS login is temporarily unavailable — use email'
+                : 'SMS арқылы кіру уақытша қолжетімсіз — email қолданыңыз');
       case 'NETWORK_ERROR':
-        return ru ? 'Нет соединения с сервером' : 'Сервермен байланыс жоқ';
+        return ru
+            ? 'Нет соединения с сервером'
+            : (en ? 'No server connection' : 'Сервермен байланыс жоқ');
       case 'BAD_RESPONSE':
-        return ru ? 'Некорректный ответ сервера' : 'Сервер жауабы дұрыс емес';
+        return ru
+            ? 'Некорректный ответ сервера'
+            : (en ? 'Invalid server response' : 'Сервер жауабы дұрыс емес');
       case 'VALIDATION':
         // Тексты VALIDATION с сервера контекстные («Код истёк» и т.п.) — для ru показываем
         // как есть; для kz даём общий перевод, пока у сервера нет локализации (эпик i18n).
-        return ru ? e.message : 'Код қате немесе мерзімі өткен. Жаңа код сұраңыз';
+        return (ru || en) ? e.message : 'Код қате немесе мерзімі өткен. Жаңа код сұраңыз';
       default:
         return e.message;
     }
@@ -338,7 +365,7 @@ class _LoginPageState extends State<LoginPage>
   }
 
   Widget _telegramBotHint(String lang, AppColors c) {
-    final username = dotenv.env['TELEGRAM_BOT_USERNAME'];
+    final username = dotenv.isInitialized ? dotenv.env['TELEGRAM_BOT_USERNAME'] : null;
     if (username == null || username.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 8),
@@ -356,8 +383,8 @@ class _LoginPageState extends State<LoginPage>
               ),
               TextSpan(
                 text: lang == 'en'
-                    ? ' and press "Start" — code arrives instantly.'
-                    : (lang == 'kk' ? ' және «Бастау» батырмасын басыңыз.' : ' и нажмите «Начать» — код придёт мгновенно.'),
+                    ? ' and share your phone number before requesting a code.'
+                    : (lang == 'kk' ? ' және кодты сұрамас бұрын телефон нөміріңізбен бөлісіңіз.' : ' и поделитесь номером, затем запросите код.'),
               ),
             ],
           ),
@@ -384,7 +411,7 @@ class _LoginPageState extends State<LoginPage>
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: c.primary.withOpacity(0.12),
+            color: c.primary.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
@@ -397,12 +424,14 @@ class _LoginPageState extends State<LoginPage>
       _animated(
         3,
         child: GestureDetector(
-          onTap: () => setState(() {
-            _step = _Step.identifier;
-            _codeCtrl.clear();
-            _errorMessage = null;
-            _devCode = null;
-          }),
+          onTap: _isLoading
+              ? null
+              : () => setState(() {
+                    _step = _Step.identifier;
+                    _codeCtrl.clear();
+                    _errorMessage = null;
+                    _devCode = null;
+                  }),
           child: Text(
             lang == 'en' ? '← Change phone/email' : (lang == 'kk' ? '← Телефон/email өзгерту' : '← Изменить телефон/email'),
             style: TextStyle(color: c.primary, fontSize: 13, fontWeight: FontWeight.w600),
@@ -417,9 +446,9 @@ class _LoginPageState extends State<LoginPage>
       duration: const Duration(milliseconds: 300),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: c.danger.withOpacity(0.1),
+        color: c.danger.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: c.danger.withOpacity(0.3)),
+        border: Border.all(color: c.danger.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -445,14 +474,16 @@ class _LoginPageState extends State<LoginPage>
         children: [
           Expanded(
             child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _authMode = _AuthMode.code;
-                  _errorMessage = null;
-                });
-              },
+              onTap: _isLoading
+                  ? null
+                  : () {
+                      setState(() {
+                        _authMode = _AuthMode.code;
+                        _errorMessage = null;
+                      });
+                    },
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
                 decoration: BoxDecoration(
                   color: _authMode == _AuthMode.code ? c.primary : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
@@ -460,6 +491,7 @@ class _LoginPageState extends State<LoginPage>
                 alignment: Alignment.center,
                 child: Text(
                   lang == 'en' ? 'Telegram / OTP' : (lang == 'kk' ? 'Telegram / Код' : 'По коду / Telegram'),
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     color: _authMode == _AuthMode.code ? Colors.white : c.textSecondary,
                     fontWeight: FontWeight.w700,
@@ -471,14 +503,16 @@ class _LoginPageState extends State<LoginPage>
           ),
           Expanded(
             child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _authMode = _AuthMode.password;
-                  _errorMessage = null;
-                });
-              },
+              onTap: _isLoading
+                  ? null
+                  : () {
+                      setState(() {
+                        _authMode = _AuthMode.password;
+                        _errorMessage = null;
+                      });
+                    },
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
                 decoration: BoxDecoration(
                   color: _authMode == _AuthMode.password ? c.primary : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
@@ -486,6 +520,7 @@ class _LoginPageState extends State<LoginPage>
                 alignment: Alignment.center,
                 child: Text(
                   lang == 'en' ? 'Chairman (Password)' : (lang == 'kk' ? 'Төраға (Құпиясөз)' : 'Председатель (Пароль)'),
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     color: _authMode == _AuthMode.password ? Colors.white : c.textSecondary,
                     fontWeight: FontWeight.w700,
@@ -572,7 +607,7 @@ class _LoginPageState extends State<LoginPage>
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: c.primary,
-          disabledBackgroundColor: c.primary.withOpacity(0.5),
+          disabledBackgroundColor: c.primary.withValues(alpha: 0.5),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           elevation: 0,
         ),
@@ -582,9 +617,12 @@ class _LoginPageState extends State<LoginPage>
                 height: 22,
                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
               )
-            : Text(label,
+            : Text(
+                label,
+                textAlign: TextAlign.center,
                 style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+                    color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16),
+              ),
       ),
     );
   }
@@ -656,12 +694,15 @@ class _LoginPageState extends State<LoginPage>
               children: [
                 Icon(LucideIcons.playCircle, size: 16, color: c.primary),
                 const SizedBox(width: 6),
-                Text(
-                  text,
-                  style: TextStyle(
-                    color: c.primary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                Flexible(
+                  child: Text(
+                    text,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: c.primary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ],
@@ -678,10 +719,12 @@ class _LoginPageState extends State<LoginPage>
   Widget _registerLink(String lang, AppColors c) {
     return Center(
       child: GestureDetector(
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const RegisterScreen()),
-        ),
+        onTap: _isLoading
+            ? null
+            : () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                ),
         child: RichText(
           text: TextSpan(
             text: lang == 'ru' ? 'Нет аккаунта?  ' : 'Аккаунт жоқ па?  ',
@@ -729,7 +772,7 @@ class _LoginPageState extends State<LoginPage>
         labelText: label,
         hintText: hint,
         labelStyle: TextStyle(color: c.textTertiary),
-        hintStyle: TextStyle(color: c.textTertiary.withOpacity(0.6)),
+        hintStyle: TextStyle(color: c.textTertiary.withValues(alpha: 0.6)),
         prefixIcon: Icon(icon, color: c.primary, size: 19),
         suffixIcon: suffixIcon,
         filled: true,

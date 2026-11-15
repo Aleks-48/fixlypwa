@@ -129,6 +129,14 @@ export function markAnnouncementRead(osiId: string, announcementId: string, user
   });
 }
 
+export function deleteAnnouncement(osiId: string, announcementId: string) {
+  return forTenant(osiId, (tx) =>
+    tx.announcement.deleteMany({
+      where: { id: announcementId, osiId },
+    }),
+  );
+}
+
 // ================= Заявки =================
 export async function createRequest(
   osiId: string,

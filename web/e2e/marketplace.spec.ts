@@ -28,6 +28,7 @@ test("маркетплейс: публикация → отклик мастер
   const chairPhone = uniquePhone();
   const resiPhone = uniquePhone();
   const masterPhone = uniquePhone();
+  const marker = "рынок-" + masterPhone.slice(-6);
   const residentFullName = "Житель МаркетПриватность"; // не должно светиться на страницах мастера
 
   // ── Председатель: ОСИ → дом → квартира → житель ──
@@ -58,15 +59,15 @@ test("маркетплейс: публикация → отклик мастер
   await rp.getByTestId("tab-requests").click();
   await rp.waitForURL("**/app/requests");
   await rp.getByTestId("req-category").selectOption("PLUMBING");
-  await rp.getByTestId("req-text").fill("Течёт кран — маркетплейс-тест");
+  await rp.getByTestId("req-text").fill("Течёт кран " + marker);
   await rp.getByTestId("req-submit").click();
   await expect(
-    rp.getByTestId("request-card").filter({ hasText: "маркетплейс-тест" }),
+    rp.getByTestId("request-card").filter({ hasText: marker }),
   ).toBeVisible();
 
   // ── Председатель публикует заявку мастерам ──
   await cp.goto(`${buildingUrl}/requests`);
-  const reqChair = cp.getByTestId("request-card").filter({ hasText: "маркетплейс-тест" });
+  const reqChair = cp.getByTestId("request-card").filter({ hasText: marker });
   await expect(reqChair).toBeVisible();
   await reqChair.getByTestId("publish-to-market").click();
   await cp.getByTestId("market-publish-submit").click();
@@ -103,16 +104,16 @@ test("маркетплейс: публикация → отклик мастер
   // ── Мастер видит заказ (без квартиры/ФИО жителя) и откликается ──
   await mp.reload();
   await expect(mp.getByTestId("master-status-approved")).toBeVisible();
-  const listingCard = mp.getByTestId("listing-card").filter({ hasText: "маркетплейс-тест" });
+  const listingCard = mp.getByRole("heading").filter({hasText:marker}).locator("..");
   await expect(listingCard).toBeVisible();
   await expect(listingCard).not.toContainText(residentFullName);
   await expect(listingCard).not.toContainText(resiPhone);
   await expect(listingCard).not.toContainText("кв. 9");
 
-  await listingCard.getByTestId("respond-to-listing").click();
-  await mp.getByTestId("offer-message").fill("Могу подъехать сегодня вечером");
-  await mp.getByTestId("offer-submit").click();
-  await expect(listingCard.getByTestId("my-listing-offer-status")).toHaveText("Отклик отправлен");
+  await listingCard.getByRole("button",{name:"Откликнуться"}).click();
+  await mp.getByRole("dialog").locator("textarea").fill("Могу подъехать сегодня вечером");
+  await mp.getByRole("dialog").getByRole("button",{name:"Откликнуться"}).click();
+  await expect(mp.getByText("Ожидает ответа", {exact:true})).toBeVisible();
 
   // ── Председатель видит отклик и принимает его ──
   await cp.reload();
@@ -126,10 +127,10 @@ test("маркетплейс: публикация → отклик мастер
 
   // ── Мастер видит, что отклик принят (вкладка «Мои отклики») ──
   await mp.reload();
-  await mp.getByTestId("master-tab-offers").click();
-  const myOfferRow = mp.getByTestId("my-offer-row").filter({ hasText: "маркетплейс-тест" });
+  await mp.getByRole("button",{name:/Мои отклики/}).click();
+  const myOfferRow = mp.getByRole("heading").filter({hasText:marker}).locator("..");
   await expect(myOfferRow).toBeVisible();
-  await expect(myOfferRow.getByTestId("my-offer-status")).toHaveText("Отклик принят");
+  await expect(myOfferRow).toContainText("Принят");
   // Приватность: даже после принятия карточка отклика не показывает ФИО/квартиру жителя —
   // контакт для связи передаётся вне приложения (председатель↔мастер по телефону).
   await expect(myOfferRow).not.toContainText(residentFullName);
